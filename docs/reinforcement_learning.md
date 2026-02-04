@@ -1,5 +1,8 @@
 # Reinforcement Learning Study Notes
 
+## 원칙
+- 문서 항목에 괄호, 덧붙임, 화살표 등을 사용하기 전에 해당 내용이 꼭 필요한지, 다른 맥락에서 이미 표시되었는지 검토한다
+
 ## 기본 개념
 - **State (상태)**: 현재 환경의 상황 (2048에서는 4x4 보드의 16개 숫자)
 - **Action (행동)**: 에이전트가 취할 수 있는 선택 (2048에서는 상/하/좌/우)
@@ -13,7 +16,7 @@
 
 ## 알아볼 내용
 - [ ] 학습이 어떤 계산식으로 이루어지는지 (Q-Learning 수식)
-- [x] Q-Learning과 Deep Q-Learning과 RL의 차이 → 위에 정리됨
+- [x] Q-Learning과 Deep Q-Learning과 RL의 차이
 - [ ] Policy가 구체적으로 어떻게 구현되는지
 - [ ] DQN은 구체적으로 어떤 방식으로 동작하는지
 - [ ] Policy와 Reward의 관계 (포함관계인지?)
