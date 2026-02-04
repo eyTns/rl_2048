@@ -77,8 +77,20 @@ class Game2048:
         """보드 이동 및 합치기, 획득 점수 반환"""
         reward = 0
 
-        # 방향에 따라 보드 회전 후 왼쪽으로 이동
-        rotated = np.rot90(self.board, action)
+        # 방향에 따른 회전 매핑 (왼쪽으로 밀기 기준)
+        # UP: 시계 90도 → 왼쪽 밀기 → 반시계 90도
+        # DOWN: 반시계 90도 → 왼쪽 밀기 → 시계 90도
+        # LEFT: 회전 없음
+        # RIGHT: 180도 → 왼쪽 밀기 → 180도
+        rotation_map = {
+            self.ACTION_UP: 1,
+            self.ACTION_DOWN: 3,
+            self.ACTION_LEFT: 0,
+            self.ACTION_RIGHT: 2,
+        }
+        k = rotation_map[action]
+
+        rotated = np.rot90(self.board, k)
 
         for i in range(4):
             row = rotated[i]
@@ -87,7 +99,7 @@ class Game2048:
             reward += row_reward
 
         # 원래 방향으로 복원
-        self.board = np.rot90(rotated, -action)
+        self.board = np.rot90(rotated, -k)
 
         return reward
 
