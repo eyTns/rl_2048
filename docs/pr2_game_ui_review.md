@@ -16,11 +16,13 @@
 | UI | 파일 | 용도 |
 |----|------|------|
 | 컴퓨터 UI | game_ui.py | pygame 기반, 키보드 조작 |
-| 모바일 UI | web_ui.py | FastAPI 기반, 터치 스와이프 |
+| 모바일 UI (서버) | web_ui.py | FastAPI 기반, ML 연동용 |
+| 모바일 UI (정적) | static_ui.html | 서버 불필요, GitHub Pages 배포 가능 |
 
 모듈 구조:
-- game2048.py: 게임 로직 (공통)
+- game2048.py: 게임 로직 (Python, RL 학습용)
 - game_ui.py: 컴퓨터 UI
-- web_ui.py: 모바일/웹 UI
+- web_ui.py: 서버 기반 웹 UI (ML 연동)
+- static_ui.html: 정적 웹 UI (독립 플레이)
 - (추후) ml_ui.py: 머신러닝 시각화
 
