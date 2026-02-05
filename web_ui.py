@@ -100,8 +100,8 @@ def state():
 @app.post("/move")
 def move(data: dict):
     action = data.get("action")
-    if action not in (0, 1, 2, 3):
-        return {"error": "Invalid action. Must be 0-3."}
+    if not isinstance(action, int) or action not in (0, 1, 2, 3):
+        return {"error": "Invalid action. Must be integer 0-3."}
     game.step(action)
     return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
 

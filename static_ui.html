@@ -37,6 +37,10 @@
         <button onclick="reset()">New Game</button>
     </div>
     <script>
+        // Constants
+        const SPAWN_4_PROBABILITY = 0.1;
+        const MIN_SWIPE_DISTANCE = 30;
+
         // Game state
         let board = [];
         let score = 0;
@@ -59,7 +63,7 @@
                     if (board[i][j] === 0) empty.push([i, j]);
             if (empty.length === 0) return;
             const [r, c] = empty[Math.floor(Math.random() * empty.length)];
-            board[r][c] = Math.random() < 0.1 ? 4 : 2;
+            board[r][c] = Math.random() < SPAWN_4_PROBABILITY ? 4 : 2;
         }
 
         function mergeRow(row) {
@@ -144,7 +148,7 @@
         document.addEventListener('touchend', e => {
             const dx = e.changedTouches[0].clientX - touchStartX;
             const dy = e.changedTouches[0].clientY - touchStartY;
-            if (Math.abs(dx) < 30 && Math.abs(dy) < 30) return;
+            if (Math.abs(dx) < MIN_SWIPE_DISTANCE && Math.abs(dy) < MIN_SWIPE_DISTANCE) return;
             if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 3 : 2);
             else move(dy > 0 ? 1 : 0);
         });

@@ -16,6 +16,7 @@ COLORS = {
     512: (237, 200, 80),
     1024: (237, 197, 63),
     2048: (237, 194, 46),
+    "big": (60, 58, 50),
 }
 
 TEXT_COLORS = {
@@ -62,9 +63,7 @@ class Game2048UI:
 
     def get_tile_color(self, value):
         """타일 값에 따른 배경색 반환"""
-        if value in COLORS:
-            return COLORS[value]
-        return (60, 58, 50)  # 2048 이상의 값
+        return COLORS.get(value, COLORS["big"])
 
     def get_text_color(self, value):
         """타일 값에 따른 텍스트 색상 반환"""
