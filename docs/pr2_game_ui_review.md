@@ -7,3 +7,20 @@
 
 ## 답변
 
+### 컴퓨터 vs 모바일 플레이
+
+현재 game_ui.py는 **컴퓨터 전용** (pygame, 키보드 입력).
+
+모바일 지원을 위해 **웹 기반 UI (web_ui.py)** 를 별도 구현.
+
+| UI | 파일 | 용도 |
+|----|------|------|
+| 컴퓨터 UI | game_ui.py | pygame 기반, 키보드 조작 |
+| 모바일 UI | web_ui.py | FastAPI 기반, 터치 스와이프 |
+
+모듈 구조:
+- game2048.py: 게임 로직 (공통)
+- game_ui.py: 컴퓨터 UI
+- web_ui.py: 모바일/웹 UI
+- (추후) ml_ui.py: 머신러닝 시각화
+

@@ -6,6 +6,8 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy",
     "pygame",
+    "fastapi",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]
