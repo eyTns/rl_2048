@@ -22,7 +22,8 @@ class QNetwork:
     def _preprocess(self, x: np.ndarray) -> np.ndarray:
         """보드 전처리: log2 스케일 정규화"""
         x = x.reshape(-1, 16).astype(np.float32)
-        x = np.where(x > 0, np.log2(x), 0)
+        # 0인 값을 1로 대체 후 log2 (log2(1)=0)
+        x = np.log2(np.maximum(x, 1))
         x = x / 15.0  # 최대 2^15 = 32768 기준
         return x
 
