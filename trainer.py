@@ -1,6 +1,6 @@
 import numpy as np
-from typing import Callable
-from dataclasses import dataclass
+from typing import Callable, Literal
+from pydantic import BaseModel, ConfigDict
 
 from game2048 import Game2048
 from model import QNetwork
@@ -8,9 +8,10 @@ from model import QNetwork
 TARGET_CLIP_RANGE = 100
 
 
-@dataclass
-class Step:
+class Step(BaseModel):
     """한 스텝의 경험"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     state: np.ndarray
     action: int
     reward: float
@@ -18,9 +19,10 @@ class Step:
     done: bool
 
 
-@dataclass
-class StepInfo:
+class StepInfo(BaseModel):
     """스텝 콜백 정보"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     step_num: int
     state: np.ndarray
     action: int
@@ -29,8 +31,7 @@ class StepInfo:
     q_values: np.ndarray
 
 
-@dataclass
-class EpisodeResult:
+class EpisodeResult(BaseModel):
     """에피소드 결과"""
     episode_num: int
     steps: int
@@ -40,10 +41,9 @@ class EpisodeResult:
     epsilon: float
 
 
-@dataclass
-class TrainConfig:
+class TrainConfig(BaseModel):
     """학습 설정"""
-    method: str = 'td'  # 'td' 또는 'mc'
+    method: Literal['td', 'mc'] = 'td'
     gamma: float = 0.999999  # TD용 할인율
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
