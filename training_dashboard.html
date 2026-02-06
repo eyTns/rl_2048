@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2048 RL Training Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a0a0b8;
+            --accent-1: #e94560;
+            --accent-2: #0ea5e9;
+            --accent-3: #22c55e;
+            --accent-4: #f59e0b;
+            --accent-5: #a855f7;
+            --accent-6: #ec4899;
+            --border: #233554;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        header h1 span { color: var(--accent-1); }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-3);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .summary-card .label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .summary-card .value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .summary-card .sub {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .value-episodes { color: var(--accent-2); }
+        .value-score { color: var(--accent-3); }
+        .value-tile { color: var(--accent-4); }
+        .value-epsilon { color: var(--accent-5); }
+        .value-steps { color: var(--accent-6); }
+        .value-loss { color: var(--accent-1); }
+
+        /* Chart Grid */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+
+        .chart-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .chart-card h3 {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 260px;
+        }
+
+        .chart-card.wide {
+            grid-column: span 2;
+        }
+
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        @media (max-width: 900px) {
+            .chart-grid { grid-template-columns: 1fr; }
+            .chart-card.wide { grid-column: span 1; }
+            .summary-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (max-width: 500px) {
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>2048 <span>RL</span> Training Dashboard</h1>
+        <div class="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">연결 중...</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="label">에피소드</div>
+                <div class="value value-episodes" id="cardEpisodes">0</div>
+                <div class="sub" id="cardTotalSteps">0 스텝</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">최근 평균 점수</div>
+                <div class="value value-score" id="cardAvgScore">0</div>
+                <div class="sub" id="cardBestScore">최고: 0</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">최고 타일</div>
+                <div class="value value-tile" id="cardBestTile">0</div>
+                <div class="sub">달성한 최대 블록</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">탐험률 (ε)</div>
+                <div class="value value-epsilon" id="cardEpsilon">1.000</div>
+                <div class="sub">탐험 ↔ 활용</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">평균 손실</div>
+                <div class="value value-loss" id="cardAvgLoss">0</div>
+                <div class="sub">최근 50 에피소드</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">평균 Q값</div>
+                <div class="value value-steps" id="cardAvgQ">0</div>
+                <div class="sub">최근 50 에피소드</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="chart-grid">
+            <div class="chart-card wide">
+                <h3>점수 추이 (Score Progression)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartScore"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>손실 곡선 (Loss Curve)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartLoss"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>탐험률 감소 (Epsilon Decay)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartEpsilon"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>최대 타일 분포 (Max Tile Distribution)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartTiles"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>에피소드당 스텝 수 (Steps per Episode)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartSteps"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Q값 추이 (Q-Value Trends)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartQ"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>가중치 노름 (Weight Norms)</h3>
+                <div class="chart-wrapper">
+                    <canvas id="chartWeights"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const POLL_INTERVAL = 2000;
+    const CHART_COLORS = {
+        red: '#e94560',
+        blue: '#0ea5e9',
+        green: '#22c55e',
+        yellow: '#f59e0b',
+        purple: '#a855f7',
+        pink: '#ec4899',
+        gray: '#6b7280',
+    };
+
+    const chartDefaults = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        plugins: {
+            legend: { labels: { color: '#a0a0b8', font: { size: 11 } } },
+        },
+        scales: {
+            x: {
+                ticks: { color: '#6b7280', maxTicksLimit: 10 },
+                grid: { color: 'rgba(255,255,255,0.04)' },
+            },
+            y: {
+                ticks: { color: '#6b7280' },
+                grid: { color: 'rgba(255,255,255,0.06)' },
+            },
+        },
+    };
+
+    function lineDataset(label, color, data, opts = {}) {
+        return {
+            label,
+            data,
+            borderColor: color,
+            backgroundColor: color + '18',
+            borderWidth: opts.width || 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: opts.fill || false,
+            ...opts,
+        };
+    }
+
+    function createLineChart(ctx, datasets, xLabel = 'Episode') {
+        return new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets },
+            options: {
+                ...chartDefaults,
+                scales: {
+                    ...chartDefaults.scales,
+                    x: { ...chartDefaults.scales.x, title: { display: true, text: xLabel, color: '#6b7280' } },
+                },
+            },
+        });
+    }
+
+    // --- Initialize Charts ---
+    const scoreChart = createLineChart(
+        document.getElementById('chartScore'),
+        [
+            lineDataset('Score', CHART_COLORS.blue, [], { width: 1 }),
+            lineDataset('이동평균 (50)', CHART_COLORS.yellow, [], { width: 2.5 }),
+        ]
+    );
+
+    const lossChart = createLineChart(
+        document.getElementById('chartLoss'),
+        [
+            lineDataset('Avg Loss', CHART_COLORS.red, [], { width: 1 }),
+            lineDataset('이동평균', CHART_COLORS.yellow, [], { width: 2 }),
+        ]
+    );
+
+    const epsilonChart = createLineChart(
+        document.getElementById('chartEpsilon'),
+        [lineDataset('Epsilon', CHART_COLORS.purple, [], { width: 2, fill: true })]
+    );
+
+    const tileChart = new Chart(document.getElementById('chartTiles'), {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: '횟수',
+                data: [],
+                backgroundColor: [
+                    '#6b7280', '#0ea5e9', '#22c55e', '#f59e0b',
+                    '#e94560', '#a855f7', '#ec4899', '#14b8a6',
+                    '#f97316', '#8b5cf6', '#06b6d4', '#84cc16',
+                ],
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            ...chartDefaults,
+            plugins: { ...chartDefaults.plugins, legend: { display: false } },
+        },
+    });
+
+    const stepsChart = createLineChart(
+        document.getElementById('chartSteps'),
+        [
+            lineDataset('Steps', CHART_COLORS.green, [], { width: 1 }),
+        ]
+    );
+
+    const qChart = createLineChart(
+        document.getElementById('chartQ'),
+        [
+            lineDataset('Mean Q', CHART_COLORS.blue, [], { width: 1.5 }),
+            lineDataset('Max Q', CHART_COLORS.pink, [], { width: 1.5 }),
+        ]
+    );
+
+    const weightsChart = createLineChart(
+        document.getElementById('chartWeights'),
+        [
+            lineDataset('W1', CHART_COLORS.blue, [], { width: 1.5 }),
+            lineDataset('W2', CHART_COLORS.green, [], { width: 1.5 }),
+            lineDataset('W3', CHART_COLORS.yellow, [], { width: 1.5 }),
+        ]
+    );
+
+    // --- Update Functions ---
+    function updateLineChart(chart, labels, ...dataSets) {
+        chart.data.labels = labels;
+        dataSets.forEach((d, i) => { chart.data.datasets[i].data = d; });
+        chart.update('none');
+    }
+
+    function updateBarChart(chart, labels, data) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = data;
+        chart.update('none');
+    }
+
+    function updateSummary(s) {
+        document.getElementById('cardEpisodes').textContent = s.total_episodes.toLocaleString();
+        document.getElementById('cardTotalSteps').textContent = s.total_steps.toLocaleString() + ' 스텝';
+        document.getElementById('cardAvgScore').textContent = Math.round(s.latest_avg_score).toLocaleString();
+        document.getElementById('cardBestScore').textContent = '최고: ' + Math.round(s.best_score).toLocaleString();
+        document.getElementById('cardBestTile').textContent = s.best_tile.toLocaleString();
+        document.getElementById('cardEpsilon').textContent = s.current_epsilon.toFixed(4);
+    }
+
+    let prevEpisodeCount = 0;
+
+    async function fetchMetrics() {
+        try {
+            const res = await fetch('/api/metrics');
+            const data = await res.json();
+
+            // 상태 표시
+            document.getElementById('statusDot').style.background = '#22c55e';
+            document.getElementById('statusText').textContent =
+                `학습 중 · ${data.summary.total_episodes} 에피소드`;
+
+            // 변경 없으면 스킵
+            if (data.summary.total_episodes === prevEpisodeCount) return;
+            prevEpisodeCount = data.summary.total_episodes;
+
+            const ep = data.episodes;
+
+            // Summary
+            updateSummary(data.summary);
+
+            // Avg loss & Q for summary cards
+            const recentLosses = data.avg_losses.slice(-50);
+            const avgLoss = recentLosses.length
+                ? recentLosses.reduce((a, b) => a + b, 0) / recentLosses.length : 0;
+            document.getElementById('cardAvgLoss').textContent = avgLoss.toFixed(4);
+
+            const recentQ = data.mean_q_values.slice(-50);
+            const avgQ = recentQ.length
+                ? recentQ.reduce((a, b) => a + b, 0) / recentQ.length : 0;
+            document.getElementById('cardAvgQ').textContent = avgQ.toFixed(3);
+
+            // Charts
+            updateLineChart(scoreChart, ep, data.scores, data.score_ma);
+            updateLineChart(lossChart, ep, data.avg_losses, data.loss_ma);
+            updateLineChart(epsilonChart, ep, data.epsilons);
+            updateLineChart(stepsChart, ep, data.steps_list);
+            updateLineChart(qChart, ep, data.mean_q_values, data.max_q_values);
+
+            // Tile distribution
+            const tileDist = data.tile_distribution;
+            updateBarChart(tileChart, Object.keys(tileDist), Object.values(tileDist));
+
+            // Weight norms
+            if (data.weight_norms.length > 0) {
+                const wEp = ep.slice(0, data.weight_norms.length);
+                updateLineChart(
+                    weightsChart, wEp,
+                    data.weight_norms.map(w => w.w1),
+                    data.weight_norms.map(w => w.w2),
+                    data.weight_norms.map(w => w.w3),
+                );
+            }
+        } catch (e) {
+            document.getElementById('statusDot').style.background = '#e94560';
+            document.getElementById('statusText').textContent = '연결 끊김 · 재시도 중...';
+        }
+    }
+
+    // Start polling
+    fetchMetrics();
+    setInterval(fetchMetrics, POLL_INTERVAL);
+    </script>
+</body>
+</html>
