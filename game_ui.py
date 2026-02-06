@@ -1,5 +1,7 @@
-import pygame
 import sys
+
+import pygame
+
 from game2048 import Game2048
 
 # 색상 정의
@@ -45,21 +47,26 @@ HEADER_HEIGHT = 100
 WINDOW_WIDTH = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1) * TILE_MARGIN
 WINDOW_HEIGHT = HEADER_HEIGHT + GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1) * TILE_MARGIN
 
+KEY_ACTION_MAP = {
+    pygame.K_UP: Game2048.ACTION_UP,
+    pygame.K_w: Game2048.ACTION_UP,
+    pygame.K_DOWN: Game2048.ACTION_DOWN,
+    pygame.K_s: Game2048.ACTION_DOWN,
+    pygame.K_LEFT: Game2048.ACTION_LEFT,
+    pygame.K_a: Game2048.ACTION_LEFT,
+    pygame.K_RIGHT: Game2048.ACTION_RIGHT,
+    pygame.K_d: Game2048.ACTION_RIGHT,
+}
 
-class Game2048UI:
-    """2048 게임 UI (pygame 기반)"""
 
-    def __init__(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-        pygame.display.set_caption("2048")
+class BoardRenderer:
+    """2048 게임 보드 렌더러"""
 
+    def __init__(self, screen):
+        self.screen = screen
         self.font_large = pygame.font.Font(None, 55)
         self.font_medium = pygame.font.Font(None, 40)
         self.font_small = pygame.font.Font(None, 30)
-
-        self.game = Game2048()
-        self.clock = pygame.time.Clock()
 
     def get_tile_color(self, value):
         """타일 값에 따른 배경색 반환"""
@@ -67,32 +74,30 @@ class Game2048UI:
 
     def get_text_color(self, value):
         """타일 값에 따른 텍스트 색상 반환"""
-        if value in TEXT_COLORS:
-            return TEXT_COLORS[value]
-        return (249, 246, 242)
+        return TEXT_COLORS.get(value, (249, 246, 242))
 
     def draw_tile(self, row, col, value):
         """타일 그리기"""
-        x = TILE_MARGIN + col * (TILE_SIZE + TILE_MARGIN)
-        y = HEADER_HEIGHT + TILE_MARGIN + row * (TILE_SIZE + TILE_MARGIN)
+        cell_stride = TILE_SIZE + TILE_MARGIN
+        x = TILE_MARGIN + col * cell_stride
+        y = HEADER_HEIGHT + TILE_MARGIN + row * cell_stride
 
         # 타일 배경
         color = self.get_tile_color(value)
-        pygame.draw.rect(self.screen, color, (x, y, TILE_SIZE, TILE_SIZE), border_radius=5)
+        pygame.draw.rect(
+            self.screen, color, (x, y, TILE_SIZE, TILE_SIZE), border_radius=5
+        )
 
         # 타일 숫자
         if value != 0:
             text_color = self.get_text_color(value)
-            if value >= 1000:
-                font = self.font_medium
-            else:
-                font = self.font_large
+            font = self.font_medium if value >= 1000 else self.font_large
 
             text = font.render(str(value), True, text_color)
             text_rect = text.get_rect(center=(x + TILE_SIZE // 2, y + TILE_SIZE // 2))
             self.screen.blit(text, text_rect)
 
-    def draw_header(self):
+    def draw_header(self, score):
         """헤더 (점수, 게임 상태) 그리기"""
         # 타이틀
         title = self.font_large.render("2048", True, (119, 110, 101))
@@ -100,11 +105,12 @@ class Game2048UI:
 
         # 점수
         score_label = self.font_small.render("SCORE", True, (238, 228, 218))
-        score_value = self.font_medium.render(str(self.game.score), True, (255, 255, 255))
+        score_value = self.font_medium.render(str(score), True, (255, 255, 255))
 
         score_box_x = WINDOW_WIDTH - 120 - TILE_MARGIN
-        pygame.draw.rect(self.screen, (187, 173, 160),
-                        (score_box_x, 15, 120, 60), border_radius=5)
+        pygame.draw.rect(
+            self.screen, (187, 173, 160), (score_box_x, 15, 120, 60), border_radius=5
+        )
 
         self.screen.blit(score_label, (score_box_x + 35, 20))
         score_rect = score_value.get_rect(center=(score_box_x + 60, 55))
@@ -118,37 +124,59 @@ class Game2048UI:
         self.screen.blit(overlay, (0, 0))
 
         game_over_text = self.font_large.render("Game Over!", True, (119, 110, 101))
-        text_rect = game_over_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 30))
+        text_rect = game_over_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 30)
+        )
         self.screen.blit(game_over_text, text_rect)
 
-        restart_text = self.font_small.render("Press R to restart", True, (119, 110, 101))
-        restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20))
+        restart_text = self.font_small.render(
+            "Press R to restart", True, (119, 110, 101)
+        )
+        restart_rect = restart_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20)
+        )
         self.screen.blit(restart_text, restart_rect)
 
-    def draw(self):
+    def draw(self, board, score, done):
         """전체 화면 그리기"""
         self.screen.fill((250, 248, 239))
 
         # 게임 보드 배경
         board_y = HEADER_HEIGHT
         board_height = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1) * TILE_MARGIN
-        pygame.draw.rect(self.screen, BACKGROUND_COLOR,
-                        (0, board_y, WINDOW_WIDTH, board_height), border_radius=5)
+        pygame.draw.rect(
+            self.screen,
+            BACKGROUND_COLOR,
+            (0, board_y, WINDOW_WIDTH, board_height),
+            border_radius=5,
+        )
 
         # 헤더
-        self.draw_header()
+        self.draw_header(score)
 
         # 타일 그리기
-        board = self.game.get_state()
         for row in range(GRID_SIZE):
             for col in range(GRID_SIZE):
                 self.draw_tile(row, col, board[row, col])
 
         # 게임 오버
-        if self.game.done:
+        if done:
             self.draw_game_over()
 
         pygame.display.flip()
+
+
+class Game2048UI:
+    """2048 게임 UI (pygame 기반)"""
+
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        pygame.display.set_caption("2048")
+
+        self.renderer = BoardRenderer(self.screen)
+        self.game = Game2048()
+        self.clock = pygame.time.Clock()
 
     def handle_input(self, key):
         """키 입력 처리"""
@@ -157,16 +185,7 @@ class Game2048UI:
                 self.game.reset()
             return
 
-        action = None
-        if key == pygame.K_UP or key == pygame.K_w:
-            action = Game2048.ACTION_UP
-        elif key == pygame.K_DOWN or key == pygame.K_s:
-            action = Game2048.ACTION_DOWN
-        elif key == pygame.K_LEFT or key == pygame.K_a:
-            action = Game2048.ACTION_LEFT
-        elif key == pygame.K_RIGHT or key == pygame.K_d:
-            action = Game2048.ACTION_RIGHT
-
+        action = KEY_ACTION_MAP.get(key)
         if action is not None:
             self.game.step(action)
 
@@ -184,7 +203,7 @@ class Game2048UI:
                     else:
                         self.handle_input(event.key)
 
-            self.draw()
+            self.renderer.draw(self.game.get_state(), self.game.score, self.game.done)
             self.clock.tick(60)
 
         pygame.quit()

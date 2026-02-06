@@ -1,5 +1,8 @@
 import numpy as np
-from typing import List, Optional
+
+MAX_POWER = 15  # log2(32768), 최대 타일 지수
+GRAD_CLIP_LIMIT = 1.0
+LOSS_GRAD_CLIP_LIMIT = 10.0
 
 
 class QNetwork:
@@ -24,7 +27,7 @@ class QNetwork:
         x = x.reshape(-1, 16).astype(np.float32)
         # 0인 값을 1로 대체 후 log2 (log2(1)=0)
         x = np.log2(np.maximum(x, 1))
-        x = x / 15.0  # 최대 2^15 = 32768 기준
+        x = x / MAX_POWER
         return x
 
     def _relu(self, x: np.ndarray) -> np.ndarray:
@@ -32,6 +35,10 @@ class QNetwork:
 
     def _relu_backward(self, grad: np.ndarray, x: np.ndarray) -> np.ndarray:
         return grad * (x > 0)
+
+    def _clip_gradients(self, *grads):
+        """그래디언트 클리핑"""
+        return [np.clip(g, -GRAD_CLIP_LIMIT, GRAD_CLIP_LIMIT) for g in grads]
 
     def forward(self, state: np.ndarray) -> np.ndarray:
         """
@@ -60,10 +67,7 @@ class QNetwork:
         z3 = a2 @ self.w3 + self.b3
 
         # 캐시 저장
-        self._cache = {
-            'x': x, 'z1': z1, 'a1': a1,
-            'z2': z2, 'a2': a2, 'z3': z3
-        }
+        self._cache = {"x": x, "z1": z1, "a1": a1, "z2": z2, "a2": a2, "z3": z3}
 
         return z3[0] if single else z3
 
@@ -79,7 +83,7 @@ class QNetwork:
             손실값
         """
         cache = self._cache
-        q_values = cache['z3']  # (1, 4)
+        q_values = cache["z3"]  # (1, 4)
 
         # NaN 체크
         if np.any(np.isnan(q_values)):
@@ -91,35 +95,32 @@ class QNetwork:
         dloss = 2 * (q_value - target)
 
         # Gradient clipping
-        dloss = np.clip(dloss, -10.0, 10.0)
+        dloss = np.clip(dloss, -LOSS_GRAD_CLIP_LIMIT, LOSS_GRAD_CLIP_LIMIT)
 
         # 출력층 기울기
         dz3 = np.zeros_like(q_values)
         dz3[0, action] = dloss
 
         # Layer 3
-        dw3 = cache['a2'].T @ dz3
+        dw3 = cache["a2"].T @ dz3
         db3 = dz3.sum(axis=0)
         da2 = dz3 @ self.w3.T
 
         # Layer 2
-        dz2 = self._relu_backward(da2, cache['z2'])
-        dw2 = cache['a1'].T @ dz2
+        dz2 = self._relu_backward(da2, cache["z2"])
+        dw2 = cache["a1"].T @ dz2
         db2 = dz2.sum(axis=0)
         da1 = dz2 @ self.w2.T
 
         # Layer 1
-        dz1 = self._relu_backward(da1, cache['z1'])
-        dw1 = cache['x'].T @ dz1
+        dz1 = self._relu_backward(da1, cache["z1"])
+        dw1 = cache["x"].T @ dz1
         db1 = dz1.sum(axis=0)
 
         # Gradient clipping for weights
-        dw3 = np.clip(dw3, -1.0, 1.0)
-        dw2 = np.clip(dw2, -1.0, 1.0)
-        dw1 = np.clip(dw1, -1.0, 1.0)
-        db3 = np.clip(db3, -1.0, 1.0)
-        db2 = np.clip(db2, -1.0, 1.0)
-        db1 = np.clip(db1, -1.0, 1.0)
+        dw3, dw2, dw1, db3, db2, db1 = self._clip_gradients(
+            dw3, dw2, dw1, db3, db2, db1
+        )
 
         # 가중치 업데이트
         self.w3 -= lr * dw3
@@ -131,9 +132,12 @@ class QNetwork:
 
         return loss
 
-    def get_action(self, state: np.ndarray,
-                   valid_actions: Optional[List[int]] = None,
-                   epsilon: float = 0.0) -> int:
+    def get_action(
+        self,
+        state: np.ndarray,
+        valid_actions: list[int] | None = None,
+        epsilon: float = 0.0,
+    ) -> int:
         """
         epsilon-greedy 행동 선택
 
@@ -166,17 +170,16 @@ class QNetwork:
 
     def save(self, path: str):
         """모델 저장"""
-        np.savez(path,
-                 w1=self.w1, b1=self.b1,
-                 w2=self.w2, b2=self.b2,
-                 w3=self.w3, b3=self.b3)
+        np.savez(
+            path, w1=self.w1, b1=self.b1, w2=self.w2, b2=self.b2, w3=self.w3, b3=self.b3
+        )
 
     def load(self, path: str):
         """모델 로드"""
         data = np.load(path)
-        self.w1, self.b1 = data['w1'], data['b1']
-        self.w2, self.b2 = data['w2'], data['b2']
-        self.w3, self.b3 = data['w3'], data['b3']
+        self.w1, self.b1 = data["w1"], data["b1"]
+        self.w2, self.b2 = data["w2"], data["b2"]
+        self.w3, self.b3 = data["w3"], data["b3"]
 
 
 # 테스트
@@ -184,12 +187,7 @@ if __name__ == "__main__":
     model = QNetwork(hidden_size=64)
 
     # 더미 상태
-    state = np.array([
-        [2, 4, 2, 4],
-        [4, 2, 4, 2],
-        [8, 16, 128, 64],
-        [8, 16, 128, 64]
-    ])
+    state = np.array([[2, 4, 2, 4], [4, 2, 4, 2], [8, 16, 128, 64], [8, 16, 128, 64]])
 
     # 순전파
     q_values = model.forward(state)

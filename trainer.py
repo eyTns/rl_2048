@@ -1,14 +1,19 @@
+from typing import Callable, Literal
+
 import numpy as np
-from typing import List, Tuple, Optional, Callable
-from dataclasses import dataclass, field
+from pydantic import BaseModel, ConfigDict
 
 from game2048 import Game2048
 from model import QNetwork
 
+TARGET_CLIP_RANGE = 100
 
-@dataclass
-class Step:
+
+class Step(BaseModel):
     """한 스텝의 경험"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     state: np.ndarray
     action: int
     reward: float
@@ -16,10 +21,34 @@ class Step:
     done: bool
 
 
-@dataclass
-class TrainConfig:
+class StepInfo(BaseModel):
+    """스텝 콜백 정보"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    step_num: int
+    state: np.ndarray
+    action: int
+    reward: float
+    loss: float | None
+    q_values: np.ndarray
+
+
+class EpisodeResult(BaseModel):
+    """에피소드 결과"""
+
+    episode_num: int
+    steps: int
+    score: float
+    max_tile: int
+    losses: list[float]
+    epsilon: float
+
+
+class TrainConfig(BaseModel):
     """학습 설정"""
-    method: str = 'td'  # 'td' 또는 'mc'
+
+    method: Literal["td", "mc"] = "td"
     gamma: float = 0.999999  # TD용 할인율
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
@@ -43,18 +72,18 @@ class BaseTrainer:
         self.total_steps = 0
 
         # 콜백
-        self.on_step_callback: Optional[Callable] = None
-        self.on_episode_end_callback: Optional[Callable] = None
+        self.on_step_callback: Callable[[StepInfo], None] | None = None
+        self.on_episode_end_callback: Callable[[EpisodeResult], None] | None = None
 
-    def train_one_episode(self) -> Tuple[int, float, List[float]]:
+    def train_one_episode(self) -> tuple[int, float, list[float]]:
         """
         한 판 학습
 
         Returns:
             (총 스텝 수, 최종 점수, 손실 리스트)
         """
-        episode: List[Step] = []
-        losses: List[float] = []
+        episode: list[Step] = []
+        losses: list[float] = []
 
         state = self.env.reset()
         step_num = 0
@@ -73,7 +102,7 @@ class BaseTrainer:
                 action=action,
                 reward=reward,
                 next_state=next_state.copy(),
-                done=done
+                done=done,
             )
             episode.append(step)
 
@@ -85,12 +114,14 @@ class BaseTrainer:
             # 콜백 호출
             if self.on_step_callback:
                 self.on_step_callback(
-                    step_num=step_num,
-                    state=state,
-                    action=action,
-                    reward=reward,
-                    loss=loss,
-                    q_values=self.model.forward(state)
+                    StepInfo(
+                        step_num=step_num,
+                        state=state,
+                        action=action,
+                        reward=reward,
+                        loss=loss,
+                        q_values=self.model.forward(state),
+                    )
                 )
 
             state = next_state
@@ -104,20 +135,21 @@ class BaseTrainer:
 
         # epsilon 감소
         self.epsilon = max(
-            self.config.epsilon_end,
-            self.epsilon * self.config.epsilon_decay
+            self.config.epsilon_end, self.epsilon * self.config.epsilon_decay
         )
         self.episode_count += 1
 
         # 콜백 호출
         if self.on_episode_end_callback:
             self.on_episode_end_callback(
-                episode_num=self.episode_count,
-                steps=step_num,
-                score=self.env.score,
-                max_tile=int(self.env.board.max()),
-                losses=losses,
-                epsilon=self.epsilon
+                EpisodeResult(
+                    episode_num=self.episode_count,
+                    steps=step_num,
+                    score=self.env.score,
+                    max_tile=int(self.env.board.max()),
+                    losses=losses,
+                    epsilon=self.epsilon,
+                )
             )
 
         return step_num, self.env.score, losses
@@ -142,15 +174,17 @@ class BaseTrainer:
                 avg_score = np.mean(scores[-print_every:])
                 avg_loss = np.mean(losses) if losses else 0
                 max_tile = max(max_tiles[-print_every:])
-                print(f"Episode {ep + 1}: avg_score={avg_score:.1f}, "
-                      f"max_tile={max_tile}, avg_loss={avg_loss:.4f}, "
-                      f"epsilon={self.epsilon:.3f}")
+                print(
+                    f"Episode {ep + 1}: avg_score={avg_score:.1f}, "
+                    f"max_tile={max_tile}, avg_loss={avg_loss:.4f}, "
+                    f"epsilon={self.epsilon:.3f}"
+                )
 
-    def _on_step(self, step: Step, episode: List[Step]) -> Optional[float]:
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """스텝마다 호출 (구현 필요)"""
         raise NotImplementedError
 
-    def _on_episode_end(self, episode: List[Step]) -> List[float]:
+    def _on_episode_end(self, episode: list[Step]) -> list[float]:
         """에피소드 끝에 호출 (구현 필요)"""
         raise NotImplementedError
 
@@ -159,11 +193,11 @@ class TDTrainer(BaseTrainer):
     """TD (Temporal Difference) 학습기"""
 
     def __init__(self, config: TrainConfig):
-        config.method = 'td'
+        config.method = "td"
         super().__init__(config)
         self.gamma = config.gamma
 
-    def _on_step(self, step: Step, episode: List[Step]) -> Optional[float]:
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """매 스텝 TD 학습"""
         # 보상 정규화 (log 스케일)
         reward = np.log1p(step.reward) if step.reward > 0 else step.reward
@@ -181,7 +215,7 @@ class TDTrainer(BaseTrainer):
             target = reward + self.gamma * next_q_max
 
         # 타겟 클리핑
-        target = np.clip(target, -100, 100)
+        target = np.clip(target, -TARGET_CLIP_RANGE, TARGET_CLIP_RANGE)
 
         # 순전파 (캐시 갱신) 후 역전파
         self.model.forward(step.state)
@@ -189,7 +223,7 @@ class TDTrainer(BaseTrainer):
 
         return loss
 
-    def _on_episode_end(self, episode: List[Step]) -> List[float]:
+    def _on_episode_end(self, episode: list[Step]) -> list[float]:
         """TD는 에피소드 끝에 추가 학습 없음"""
         return []
 
@@ -198,15 +232,15 @@ class MCTrainer(BaseTrainer):
     """Monte Carlo 학습기"""
 
     def __init__(self, config: TrainConfig):
-        config.method = 'mc'
+        config.method = "mc"
         super().__init__(config)
         self.normalize_returns = True  # return 정규화 여부
 
-    def _on_step(self, step: Step, episode: List[Step]) -> Optional[float]:
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
         return None
 
-    def _on_episode_end(self, episode: List[Step]) -> List[float]:
+    def _on_episode_end(self, episode: list[Step]) -> list[float]:
         """에피소드 끝에 전체 학습"""
         if not episode:
             return []
@@ -236,9 +270,9 @@ class MCTrainer(BaseTrainer):
 
 def create_trainer(config: TrainConfig) -> BaseTrainer:
     """설정에 따라 적절한 Trainer 생성"""
-    if config.method == 'td':
+    if config.method == "td":
         return TDTrainer(config)
-    elif config.method == 'mc':
+    elif config.method == "mc":
         return MCTrainer(config)
     else:
         raise ValueError(f"Unknown method: {config.method}")
@@ -249,13 +283,13 @@ if __name__ == "__main__":
     print("=" * 50)
     print("TD Trainer 테스트 (gamma=0.999999)")
     print("=" * 50)
-    td_config = TrainConfig(method='td', gamma=0.999999)
+    td_config = TrainConfig(method="td", gamma=0.999999)
     td_trainer = create_trainer(td_config)
     td_trainer.train(episodes=100, print_every=20)
 
     print("\n" + "=" * 50)
     print("MC Trainer 테스트")
     print("=" * 50)
-    mc_config = TrainConfig(method='mc')
+    mc_config = TrainConfig(method="mc")
     mc_trainer = create_trainer(mc_config)
     mc_trainer.train(episodes=100, print_every=20)

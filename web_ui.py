@@ -1,9 +1,34 @@
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
+
 from game2048 import Game2048
 
 app = FastAPI()
 game = Game2048()
+
+
+class MoveRequest(BaseModel):
+    """이동 요청"""
+
+    action: int = Field(ge=0, le=3)
+
+
+class GameResponse(BaseModel):
+    """게임 상태 응답"""
+
+    board: list[list[int]]
+    score: int
+    done: bool
+
+
+def _game_response() -> GameResponse:
+    """현재 게임 상태를 응답 모델로 반환"""
+    return GameResponse(
+        board=game.get_state().tolist(), score=game.score, done=game.done
+    )
+
 
 HTML_PAGE = """<!DOCTYPE html>
 <html>
@@ -94,24 +119,20 @@ def index():
 
 @app.get("/state")
 def state():
-    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+    return _game_response()
 
 
 @app.post("/move")
-def move(data: dict):
-    action = data.get("action")
-    if not isinstance(action, int) or action not in (0, 1, 2, 3):
-        return {"error": "Invalid action. Must be integer 0-3."}
-    game.step(action)
-    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+def move(data: MoveRequest):
+    game.step(data.action)
+    return _game_response()
 
 
 @app.post("/reset")
 def reset():
     game.reset()
-    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+    return _game_response()
 
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

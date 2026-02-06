@@ -1,5 +1,5 @@
 import numpy as np
-import pytest
+
 from game2048 import Game2048
 
 
@@ -13,7 +13,7 @@ class TestGame2048:
 
         assert state.shape == (4, 4)
         assert game.score == 0
-        assert game.done == False
+        assert not game.done
 
     def test_reset_spawns_two_tiles(self):
         """reset()이 2개의 타일을 생성하는지 확인"""
@@ -93,64 +93,48 @@ class TestGame2048:
     def test_step_invalid_move(self):
         """유효하지 않은 이동 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [2, 4, 2, 4],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 4, 2, 4], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32
+        )
 
-        old_board = game.board.copy()
         _, _, _, info = game.step(Game2048.ACTION_UP)
 
         # 위로 이동이 유효하지 않아야 함
-        assert info["valid_move"] == False
+        assert not info["valid_move"]
 
     def test_can_move_with_empty_cell(self):
         """빈 칸이 있으면 이동 가능"""
         game = Game2048()
-        game.board = np.array([
-            [2, 4, 2, 4],
-            [4, 2, 4, 2],
-            [2, 4, 2, 4],
-            [4, 2, 4, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 0]], dtype=np.int32
+        )
 
-        assert game._can_move() == True
+        assert game._can_move()
 
     def test_can_move_with_adjacent_same(self):
         """인접한 같은 숫자가 있으면 이동 가능"""
         game = Game2048()
-        game.board = np.array([
-            [2, 4, 2, 4],
-            [4, 2, 4, 2],
-            [2, 4, 2, 4],
-            [4, 2, 4, 4]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 4]], dtype=np.int32
+        )
 
-        assert game._can_move() == True
+        assert game._can_move()
 
     def test_game_over(self):
         """게임 오버 조건 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [2, 4, 2, 4],
-            [4, 2, 4, 2],
-            [2, 4, 2, 4],
-            [4, 2, 4, 2]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 2]], dtype=np.int32
+        )
 
-        assert game._can_move() == False
+        assert not game._can_move()
 
     def test_get_valid_actions(self):
         """유효한 행동 목록 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [2, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32
+        )
 
         valid = game.get_valid_actions()
 
@@ -162,12 +146,9 @@ class TestGame2048:
     def test_score_accumulates(self):
         """점수가 누적되는지 확인"""
         game = Game2048()
-        game.board = np.array([
-            [2, 2, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 2, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32
+        )
         game.score = 0
 
         game.step(Game2048.ACTION_LEFT)
@@ -176,12 +157,9 @@ class TestGame2048:
     def test_move_left(self):
         """왼쪽 이동 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [0, 0, 2, 2],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[0, 0, 2, 2], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32
+        )
 
         game._move(Game2048.ACTION_LEFT)
         assert game.board[0, 0] == 4
@@ -190,12 +168,9 @@ class TestGame2048:
     def test_move_right(self):
         """오른쪽 이동 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [2, 2, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 2, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32
+        )
 
         game._move(Game2048.ACTION_RIGHT)
         assert game.board[0, 3] == 4
@@ -204,12 +179,9 @@ class TestGame2048:
     def test_move_up(self):
         """위쪽 이동 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            [2, 0, 0, 0],
-            [2, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[0, 0, 0, 0], [0, 0, 0, 0], [2, 0, 0, 0], [2, 0, 0, 0]], dtype=np.int32
+        )
 
         game._move(Game2048.ACTION_UP)
         assert game.board[0, 0] == 4
@@ -218,12 +190,9 @@ class TestGame2048:
     def test_move_down(self):
         """아래쪽 이동 테스트"""
         game = Game2048()
-        game.board = np.array([
-            [2, 0, 0, 0],
-            [2, 0, 0, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0]
-        ], dtype=np.int32)
+        game.board = np.array(
+            [[2, 0, 0, 0], [2, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32
+        )
 
         game._move(Game2048.ACTION_DOWN)
         assert game.board[3, 0] == 4

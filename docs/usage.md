@@ -96,13 +96,15 @@ trainer.train(episodes=1000, print_every=100)
 ### 시각화 콜백
 
 ```python
-def on_step(step_num, state, action, reward, loss, q_values):
-    """매 스텝 호출"""
-    print(f"Step {step_num}: action={action}, reward={reward}")
+from trainer import StepInfo, EpisodeResult
 
-def on_episode_end(episode_num, steps, score, max_tile, losses, epsilon):
+def on_step(info: StepInfo):
+    """매 스텝 호출"""
+    print(f"Step {info.step_num}: action={info.action}, reward={info.reward}")
+
+def on_episode_end(result: EpisodeResult):
     """에피소드 끝 호출"""
-    print(f"Episode {episode_num}: score={score}, max={max_tile}")
+    print(f"Episode {result.episode_num}: score={result.score}, max={result.max_tile}")
 
 trainer.on_step_callback = on_step
 trainer.on_episode_end_callback = on_episode_end
