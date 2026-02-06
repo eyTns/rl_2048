@@ -67,10 +67,7 @@ class QNetwork:
         z3 = a2 @ self.w3 + self.b3
 
         # 캐시 저장
-        self._cache = {
-            'x': x, 'z1': z1, 'a1': a1,
-            'z2': z2, 'a2': a2, 'z3': z3
-        }
+        self._cache = {"x": x, "z1": z1, "a1": a1, "z2": z2, "a2": a2, "z3": z3}
 
         return z3[0] if single else z3
 
@@ -86,7 +83,7 @@ class QNetwork:
             손실값
         """
         cache = self._cache
-        q_values = cache['z3']  # (1, 4)
+        q_values = cache["z3"]  # (1, 4)
 
         # NaN 체크
         if np.any(np.isnan(q_values)):
@@ -105,19 +102,19 @@ class QNetwork:
         dz3[0, action] = dloss
 
         # Layer 3
-        dw3 = cache['a2'].T @ dz3
+        dw3 = cache["a2"].T @ dz3
         db3 = dz3.sum(axis=0)
         da2 = dz3 @ self.w3.T
 
         # Layer 2
-        dz2 = self._relu_backward(da2, cache['z2'])
-        dw2 = cache['a1'].T @ dz2
+        dz2 = self._relu_backward(da2, cache["z2"])
+        dw2 = cache["a1"].T @ dz2
         db2 = dz2.sum(axis=0)
         da1 = dz2 @ self.w2.T
 
         # Layer 1
-        dz1 = self._relu_backward(da1, cache['z1'])
-        dw1 = cache['x'].T @ dz1
+        dz1 = self._relu_backward(da1, cache["z1"])
+        dw1 = cache["x"].T @ dz1
         db1 = dz1.sum(axis=0)
 
         # Gradient clipping for weights
@@ -135,9 +132,12 @@ class QNetwork:
 
         return loss
 
-    def get_action(self, state: np.ndarray,
-                   valid_actions: list[int] | None = None,
-                   epsilon: float = 0.0) -> int:
+    def get_action(
+        self,
+        state: np.ndarray,
+        valid_actions: list[int] | None = None,
+        epsilon: float = 0.0,
+    ) -> int:
         """
         epsilon-greedy 행동 선택
 
@@ -170,17 +170,16 @@ class QNetwork:
 
     def save(self, path: str):
         """모델 저장"""
-        np.savez(path,
-                 w1=self.w1, b1=self.b1,
-                 w2=self.w2, b2=self.b2,
-                 w3=self.w3, b3=self.b3)
+        np.savez(
+            path, w1=self.w1, b1=self.b1, w2=self.w2, b2=self.b2, w3=self.w3, b3=self.b3
+        )
 
     def load(self, path: str):
         """모델 로드"""
         data = np.load(path)
-        self.w1, self.b1 = data['w1'], data['b1']
-        self.w2, self.b2 = data['w2'], data['b2']
-        self.w3, self.b3 = data['w3'], data['b3']
+        self.w1, self.b1 = data["w1"], data["b1"]
+        self.w2, self.b2 = data["w2"], data["b2"]
+        self.w3, self.b3 = data["w3"], data["b3"]
 
 
 # 테스트
@@ -188,12 +187,7 @@ if __name__ == "__main__":
     model = QNetwork(hidden_size=64)
 
     # 더미 상태
-    state = np.array([
-        [2, 4, 2, 4],
-        [4, 2, 4, 2],
-        [8, 16, 128, 64],
-        [8, 16, 128, 64]
-    ])
+    state = np.array([[2, 4, 2, 4], [4, 2, 4, 2], [8, 16, 128, 64], [8, 16, 128, 64]])
 
     # 순전파
     q_values = model.forward(state)

@@ -1,5 +1,6 @@
-import numpy as np
 import random
+
+import numpy as np
 
 FOUR_SPAWN_RATE = 0.1
 
@@ -130,7 +131,7 @@ class Game2048:
 
         # 나머지는 0으로 채우기
         result = np.zeros(4, dtype=np.int32)
-        result[:len(merged)] = merged
+        result[: len(merged)] = merged
 
         return result, reward
 

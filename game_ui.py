@@ -1,5 +1,7 @@
-import pygame
 import sys
+
+import pygame
+
 from game2048 import Game2048
 
 # 색상 정의
@@ -82,7 +84,9 @@ class BoardRenderer:
 
         # 타일 배경
         color = self.get_tile_color(value)
-        pygame.draw.rect(self.screen, color, (x, y, TILE_SIZE, TILE_SIZE), border_radius=5)
+        pygame.draw.rect(
+            self.screen, color, (x, y, TILE_SIZE, TILE_SIZE), border_radius=5
+        )
 
         # 타일 숫자
         if value != 0:
@@ -104,8 +108,9 @@ class BoardRenderer:
         score_value = self.font_medium.render(str(score), True, (255, 255, 255))
 
         score_box_x = WINDOW_WIDTH - 120 - TILE_MARGIN
-        pygame.draw.rect(self.screen, (187, 173, 160),
-                        (score_box_x, 15, 120, 60), border_radius=5)
+        pygame.draw.rect(
+            self.screen, (187, 173, 160), (score_box_x, 15, 120, 60), border_radius=5
+        )
 
         self.screen.blit(score_label, (score_box_x + 35, 20))
         score_rect = score_value.get_rect(center=(score_box_x + 60, 55))
@@ -119,11 +124,17 @@ class BoardRenderer:
         self.screen.blit(overlay, (0, 0))
 
         game_over_text = self.font_large.render("Game Over!", True, (119, 110, 101))
-        text_rect = game_over_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 30))
+        text_rect = game_over_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 30)
+        )
         self.screen.blit(game_over_text, text_rect)
 
-        restart_text = self.font_small.render("Press R to restart", True, (119, 110, 101))
-        restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20))
+        restart_text = self.font_small.render(
+            "Press R to restart", True, (119, 110, 101)
+        )
+        restart_rect = restart_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20)
+        )
         self.screen.blit(restart_text, restart_rect)
 
     def draw(self, board, score, done):
@@ -133,8 +144,12 @@ class BoardRenderer:
         # 게임 보드 배경
         board_y = HEADER_HEIGHT
         board_height = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1) * TILE_MARGIN
-        pygame.draw.rect(self.screen, BACKGROUND_COLOR,
-                        (0, board_y, WINDOW_WIDTH, board_height), border_radius=5)
+        pygame.draw.rect(
+            self.screen,
+            BACKGROUND_COLOR,
+            (0, board_y, WINDOW_WIDTH, board_height),
+            border_radius=5,
+        )
 
         # 헤더
         self.draw_header(score)

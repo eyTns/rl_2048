@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+
 from game2048 import Game2048
 
 app = FastAPI()
@@ -10,11 +11,13 @@ game = Game2048()
 
 class MoveRequest(BaseModel):
     """이동 요청"""
+
     action: int = Field(ge=0, le=3)
 
 
 class GameResponse(BaseModel):
     """게임 상태 응답"""
+
     board: list[list[int]]
     score: int
     done: bool
@@ -22,7 +25,9 @@ class GameResponse(BaseModel):
 
 def _game_response() -> GameResponse:
     """현재 게임 상태를 응답 모델로 반환"""
-    return GameResponse(board=game.get_state().tolist(), score=game.score, done=game.done)
+    return GameResponse(
+        board=game.get_state().tolist(), score=game.score, done=game.done
+    )
 
 
 HTML_PAGE = """<!DOCTYPE html>
