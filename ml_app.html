@@ -490,7 +490,7 @@ class TDTrainer {
             losses.push(loss);
 
             const qValues = this.model.forward(state);
-            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss, qValues, done });
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss, qValues, done, score: env.score, maxTile: env.getMaxTile() });
 
             state = nextState;
             stepNum++;
@@ -534,7 +534,7 @@ class MCTrainer {
             const qValues = this.model.forward(state);
             episode.push({ state: state.map(r => [...r]), action, reward, qValues });
 
-            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, done });
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
 
             state = nextState;
             stepNum++;
@@ -691,7 +691,7 @@ function drawNetwork() {
 // --- 스텝 콜백 (학습/게임 중 매 스텝 호출) ---
 function onStepUI(info) {
     renderBoard(info.state);
-    updateInfo({ score: env.score, maxTile: env.getMaxTile(), step: info.stepNum, reward: info.reward });
+    updateInfo({ score: info.score, maxTile: info.maxTile, step: info.stepNum, reward: info.reward });
     if (info.qValues) {
         let bestA = 0, bestQ = -Infinity;
         for (let a = 0; a < 4; a++) if (info.qValues[a] > bestQ) { bestQ = info.qValues[a]; bestA = a; }
@@ -767,7 +767,7 @@ document.getElementById('btnPlay').addEventListener('click', async () => {
         const action = model.getAction(env.getState(), validActions, 0);
         const qValues = model.forward(env.getState());
         const { reward } = env.step(action);
-        onStepUI({ stepNum: step, state: env.getState(), action, reward, qValues, done: env.done });
+        onStepUI({ stepNum: step, state: env.getState(), action, reward, qValues, done: env.done, score: env.score, maxTile: env.getMaxTile() });
         step++;
         await new Promise(r => setTimeout(r, 50));
     }
@@ -786,8 +786,6 @@ document.getElementById('btnTD').addEventListener('click', async () => {
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
         setStatus(`TD 학습 중... (${result.episode}/${n})`);
-        // 매 에피소드 새 env 필요
-        env = new Game2048();
     });
     setStatus(`TD 학습 완료 · ${n}게임`);
     setRunning(false);
@@ -804,7 +802,6 @@ document.getElementById('btnMC').addEventListener('click', async () => {
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
         setStatus(`MC 학습 중... (${result.episode}/${n})`);
-        env = new Game2048();
     });
     setStatus(`MC 학습 완료 · ${n}게임`);
     setRunning(false);
