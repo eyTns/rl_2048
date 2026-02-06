@@ -9,6 +9,7 @@
     trainer.train(episodes=1000)
 """
 
+import json
 import threading
 from collections import defaultdict
 from pathlib import Path
@@ -251,6 +252,27 @@ class TrainingVisualizer:
         self._server_thread.start()
         print(f"Training dashboard: http://localhost:{self.port}")
 
+    def export_html(self, path: str = "training_report.html"):
+        """학습 결과를 정적 HTML 파일로 내보내기
+
+        서버 없이 브라우저에서 바로 열 수 있는 독립 파일을 생성한다.
+        모바일 브라우저에서도 열 수 있고, GitHub Pages 등에 배포 가능.
+
+        Args:
+            path: 저장할 파일 경로
+        """
+        template_path = Path(__file__).parent / "training_dashboard.html"
+        html = template_path.read_text(encoding="utf-8")
+
+        data_json = json.dumps(self.metrics.to_dict(), ensure_ascii=False)
+        data_script = f"<script>window.__STATIC_DATA__ = {data_json};</script>"
+
+        # </head> 바로 앞에 데이터 스크립트 삽입
+        html = html.replace("</head>", f"{data_script}\n</head>")
+
+        Path(path).write_text(html, encoding="utf-8")
+        print(f"Training report exported: {path}")
+
 
 if __name__ == "__main__":
     from trainer import TrainConfig, create_trainer
@@ -263,7 +285,10 @@ if __name__ == "__main__":
     viz.start()
 
     trainer.train(episodes=500, print_every=50)
-    print("학습 완료. 대시보드에서 결과를 확인하세요.")
+
+    # 정적 HTML 내보내기 (모바일에서 열 수 있음)
+    viz.export_html("training_report.html")
+    print("학습 완료. training_report.html을 모바일로 공유하세요.")
 
     # 서버 유지
     try:

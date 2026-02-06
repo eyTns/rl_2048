@@ -469,9 +469,56 @@
         }
     }
 
-    // Start polling
-    fetchMetrics();
-    setInterval(fetchMetrics, POLL_INTERVAL);
+    // --- Mode Detection ---
+    // Static mode: window.__STATIC_DATA__ is set by export_html()
+    // Live mode: poll /api/metrics from server
+    function renderStatic(data) {
+        document.getElementById('statusDot').style.background = '#f59e0b';
+        document.getElementById('statusDot').style.animation = 'none';
+        document.getElementById('statusText').textContent =
+            `정적 보고서 · ${data.summary.total_episodes} 에피소드`;
+
+        prevEpisodeCount = -1; // force update
+        // Inline the render logic so we don't need fetch
+        const ep = data.episodes;
+        updateSummary(data.summary);
+
+        const recentLosses = data.avg_losses.slice(-50);
+        const avgLoss = recentLosses.length
+            ? recentLosses.reduce((a, b) => a + b, 0) / recentLosses.length : 0;
+        document.getElementById('cardAvgLoss').textContent = avgLoss.toFixed(4);
+
+        const recentQ = data.mean_q_values.slice(-50);
+        const avgQ = recentQ.length
+            ? recentQ.reduce((a, b) => a + b, 0) / recentQ.length : 0;
+        document.getElementById('cardAvgQ').textContent = avgQ.toFixed(3);
+
+        updateLineChart(scoreChart, ep, data.scores, data.score_ma);
+        updateLineChart(lossChart, ep, data.avg_losses, data.loss_ma);
+        updateLineChart(epsilonChart, ep, data.epsilons);
+        updateLineChart(stepsChart, ep, data.steps_list);
+        updateLineChart(qChart, ep, data.mean_q_values, data.max_q_values);
+
+        const tileDist = data.tile_distribution;
+        updateBarChart(tileChart, Object.keys(tileDist), Object.values(tileDist));
+
+        if (data.weight_norms.length > 0) {
+            const wEp = ep.slice(0, data.weight_norms.length);
+            updateLineChart(
+                weightsChart, wEp,
+                data.weight_norms.map(w => w.w1),
+                data.weight_norms.map(w => w.w2),
+                data.weight_norms.map(w => w.w3),
+            );
+        }
+    }
+
+    if (window.__STATIC_DATA__) {
+        renderStatic(window.__STATIC_DATA__);
+    } else {
+        fetchMetrics();
+        setInterval(fetchMetrics, POLL_INTERVAL);
+    }
     </script>
 </body>
 </html>

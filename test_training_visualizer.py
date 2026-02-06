@@ -409,3 +409,60 @@ class TestTrainingVisualizer:
 
         assert len(viz.metrics.episodes) == 3
         assert all(loss >= 0 for loss in viz.metrics.avg_losses)
+
+    def test_export_html_creates_file(self, tmp_path):
+        """정적 HTML 내보내기"""
+        config = TrainConfig(method="td")
+        trainer = create_trainer(config)
+        viz = TrainingVisualizer(trainer, port=9993)
+
+        trainer.train(episodes=3, print_every=3)
+
+        output = tmp_path / "report.html"
+        viz.export_html(str(output))
+
+        assert output.exists()
+        content = output.read_text(encoding="utf-8")
+        # Chart.js 포함
+        assert "chart.js" in content
+        # 정적 데이터 내장
+        assert "__STATIC_DATA__" in content
+        # 대시보드 구조 포함
+        assert "Training Dashboard" in content
+
+    def test_export_html_contains_metrics(self, tmp_path):
+        """내보낸 HTML에 실제 메트릭 데이터가 포함되는지 확인"""
+        config = TrainConfig(method="td")
+        trainer = create_trainer(config)
+        viz = TrainingVisualizer(trainer, port=9992)
+
+        trainer.train(episodes=5, print_every=5)
+
+        output = tmp_path / "report.html"
+        viz.export_html(str(output))
+
+        content = output.read_text(encoding="utf-8")
+        # 에피소드 수가 JSON에 포함
+        assert '"total_episodes": 5' in content
+
+    def test_export_html_valid_json_data(self, tmp_path):
+        """내장된 JSON 데이터가 유효한지 확인"""
+        import json
+
+        config = TrainConfig(method="td")
+        trainer = create_trainer(config)
+        viz = TrainingVisualizer(trainer, port=9991)
+
+        trainer.train(episodes=2, print_every=2)
+
+        output = tmp_path / "report.html"
+        viz.export_html(str(output))
+
+        content = output.read_text(encoding="utf-8")
+        # __STATIC_DATA__ = {...}; 부분에서 JSON 추출
+        start = content.index("__STATIC_DATA__ = ") + len("__STATIC_DATA__ = ")
+        end = content.index(";</script>", start)
+        data = json.loads(content[start:end])
+
+        assert data["summary"]["total_episodes"] == 2
+        assert len(data["episodes"]) == 2
