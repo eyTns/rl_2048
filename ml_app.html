@@ -124,6 +124,7 @@
             <button id="btnTD">TD 학습</button>
             <button id="btnMC">MC 학습</button>
             <label>n=<input type="number" id="inputN" value="1" min="1" max="10000"></label>
+            <button id="btnStop" class="accent" disabled>중지</button>
         </div>
     </div>
 
@@ -451,10 +452,14 @@ class TDTrainer {
         this.epsilon = this.cfg.epsilonStart;
         this.episodeCount = 0;
         this.onStep = null;   // callback(info)
+        this.aborted = false;
     }
+
+    abort() { this.aborted = true; }
 
     async trainEpisodes(env, n = 1, onEpisodeEnd = null) {
         for (let ep = 0; ep < n; ep++) {
+            if (this.aborted) break;
             const result = await this._trainOne(env);
             this.episodeCount++;
             this.epsilon = Math.max(this.cfg.epsilonEnd, this.epsilon * this.cfg.epsilonDecay);
@@ -468,7 +473,7 @@ class TDTrainer {
         let stepNum = 0;
         let prevStep = null; // 1스텝 지연 학습용
 
-        while (!env.done) {
+        while (!env.done && !this.aborted) {
             const validActions = env.getValidActions();
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
@@ -510,10 +515,14 @@ class MCTrainer {
         this.epsilon = this.cfg.epsilonStart;
         this.episodeCount = 0;
         this.onStep = null;
+        this.aborted = false;
     }
+
+    abort() { this.aborted = true; }
 
     async trainEpisodes(env, n = 1, onEpisodeEnd = null) {
         for (let ep = 0; ep < n; ep++) {
+            if (this.aborted) break;
             const result = await this._trainOne(env);
             this.episodeCount++;
             this.epsilon = Math.max(this.cfg.epsilonEnd, this.epsilon * this.cfg.epsilonDecay);
@@ -527,7 +536,7 @@ class MCTrainer {
         let stepNum = 0;
 
         // 에피소드 수집
-        while (!env.done) {
+        while (!env.done && !this.aborted) {
             const validActions = env.getValidActions();
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
@@ -540,6 +549,9 @@ class MCTrainer {
             stepNum++;
             if (stepNum % 10 === 0) await new Promise(r => setTimeout(r, 0));
         }
+
+        // 중단된 경우 수집된 데이터로 학습하지 않음
+        if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
 
         // Return 계산 (역순)
         const returns = new Array(episode.length);
@@ -569,6 +581,8 @@ let env = new Game2048();
 let model = new QNetwork(128);
 let currentStep = 0;
 let currentEpisode = 0;
+let activeTrainer = null;  // 현재 실행 중인 트레이너 (중지용)
+let playAborted = false;   // 게임 실행 중지 플래그
 let running = false;
 
 // --- 게임판 렌더링 ---
@@ -710,6 +724,7 @@ function setStatus(text) { document.getElementById('statusText').textContent = t
 function setRunning(v) {
     running = v;
     document.querySelectorAll('.controls button').forEach(b => b.disabled = v);
+    document.getElementById('btnStop').disabled = !v;
 }
 
 document.getElementById('btnNewModel').addEventListener('click', () => {
@@ -756,12 +771,13 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 document.getElementById('btnPlay').addEventListener('click', async () => {
     if (running) return;
     setRunning(true);
+    playAborted = false;
     setStatus('게임 실행 중...');
     env = new Game2048();
     const state = env.reset();
     renderBoard(state);
     let step = 0;
-    while (!env.done) {
+    while (!env.done && !playAborted) {
         const validActions = env.getValidActions();
         if (validActions.length === 0) break;
         const action = model.getAction(env.getState(), validActions, 0);
@@ -771,7 +787,8 @@ document.getElementById('btnPlay').addEventListener('click', async () => {
         step++;
         await new Promise(r => setTimeout(r, 50));
     }
-    setStatus(`게임 종료 · 점수 ${env.score} · 최고 타일 ${env.getMaxTile()}`);
+    const msg = playAborted ? '게임 중단' : `게임 종료 · 점수 ${env.score} · 최고 타일 ${env.getMaxTile()}`;
+    setStatus(msg);
     setRunning(false);
 });
 
@@ -783,11 +800,14 @@ document.getElementById('btnTD').addEventListener('click', async () => {
     env = new Game2048();
     const trainer = new TDTrainer(model);
     trainer.onStep = onStepUI;
+    activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
         setStatus(`TD 학습 중... (${result.episode}/${n})`);
     });
-    setStatus(`TD 학습 완료 · ${n}게임`);
+    const msg = trainer.aborted ? `TD 학습 중단 · ${trainer.episodeCount}게임` : `TD 학습 완료 · ${n}게임`;
+    setStatus(msg);
+    activeTrainer = null;
     setRunning(false);
 });
 
@@ -799,12 +819,20 @@ document.getElementById('btnMC').addEventListener('click', async () => {
     env = new Game2048();
     const trainer = new MCTrainer(model);
     trainer.onStep = onStepUI;
+    activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
         setStatus(`MC 학습 중... (${result.episode}/${n})`);
     });
-    setStatus(`MC 학습 완료 · ${n}게임`);
+    const msg = trainer.aborted ? `MC 학습 중단 · ${trainer.episodeCount}게임` : `MC 학습 완료 · ${n}게임`;
+    setStatus(msg);
+    activeTrainer = null;
     setRunning(false);
+});
+
+document.getElementById('btnStop').addEventListener('click', () => {
+    if (activeTrainer) activeTrainer.abort();
+    playAborted = true;
 });
 
 // --- 초기화 ---
