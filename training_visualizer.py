@@ -1,6 +1,6 @@
 """머신러닝 학습 과정 시각화 모듈
 
-학습 중 메트릭을 수집하고 실시간 웹 대시보드로 시각화한다.
+학습 중 메트릭을 수집하고 실시간 웹 대시보드로 시각화합니다.
 
 사용법:
     trainer = create_trainer(config)
@@ -29,7 +29,7 @@ class TrainingMetrics:
     """학습 메트릭 수집기
 
     트레이너 콜백을 통해 에피소드별/스텝별 메트릭을 수집하고
-    시각화에 필요한 집계 데이터를 제공한다.
+    시각화에 필요한 집계 데이터를 제공합니다.
     """
 
     def __init__(self):
@@ -187,7 +187,7 @@ class TrainingVisualizer:
     """학습 과정 실시간 웹 대시보드
 
     트레이너에 콜백을 등록하여 메트릭을 수집하고,
-    FastAPI 기반 웹 대시보드에서 실시간으로 시각화한다.
+    FastAPI 기반 웹 대시보드에서 실시간으로 시각화합니다.
 
     사용법:
         viz = TrainingVisualizer(trainer, port=8888)
@@ -255,8 +255,8 @@ class TrainingVisualizer:
     def export_html(self, path: str = "training_report.html"):
         """학습 결과를 정적 HTML 파일로 내보내기
 
-        서버 없이 브라우저에서 바로 열 수 있는 독립 파일을 생성한다.
-        모바일 브라우저에서도 열 수 있고, GitHub Pages 등에 배포 가능.
+        서버 없이 브라우저에서 바로 열 수 있는 독립 파일을 생성합니다.
+        모바일 브라우저에서도 열 수 있고, GitHub Pages 등에 배포할 수 있습니다.
 
         Args:
             path: 저장할 파일 경로
