@@ -13,6 +13,18 @@ class Game2048:
     ACTION_LEFT = 2
     ACTION_RIGHT = 3
 
+    # 방향에 따른 회전 횟수 (왼쪽으로 밀기 기준)
+    # UP: 시계 90도 → 왼쪽 밀기 → 반시계 90도
+    # DOWN: 반시계 90도 → 왼쪽 밀기 → 시계 90도
+    # LEFT: 회전 없음
+    # RIGHT: 180도 → 왼쪽 밀기 → 180도
+    ROTATION_MAP = {
+        ACTION_UP: 1,
+        ACTION_DOWN: 3,
+        ACTION_LEFT: 0,
+        ACTION_RIGHT: 2,
+    }
+
     def __init__(self):
         self.board = None
         self.score = 0
@@ -78,19 +90,7 @@ class Game2048:
     def _move(self, action):
         """보드 이동 및 합치기, 획득 점수 반환"""
         reward = 0
-
-        # 방향에 따른 회전 매핑 (왼쪽으로 밀기 기준)
-        # UP: 시계 90도 → 왼쪽 밀기 → 반시계 90도
-        # DOWN: 반시계 90도 → 왼쪽 밀기 → 시계 90도
-        # LEFT: 회전 없음
-        # RIGHT: 180도 → 왼쪽 밀기 → 180도
-        rotation_map = {
-            self.ACTION_UP: 1,
-            self.ACTION_DOWN: 3,
-            self.ACTION_LEFT: 0,
-            self.ACTION_RIGHT: 2,
-        }
-        rotation_count = rotation_map[action]
+        rotation_count = self.ROTATION_MAP[action]
 
         rotated = np.rot90(self.board, rotation_count)
 
@@ -116,20 +116,17 @@ class Game2048:
         # 합치기
         merged = []
         reward = 0
-        skip = False
+        i = 0
 
-        for i in range(len(non_zero)):
-            if skip:
-                skip = False
-                continue
-
+        while i < len(non_zero):
             if i + 1 < len(non_zero) and non_zero[i] == non_zero[i + 1]:
                 merged_value = non_zero[i] * 2
                 merged.append(merged_value)
                 reward += merged_value
-                skip = True
+                i += 2
             else:
                 merged.append(non_zero[i])
+                i += 1
 
         # 나머지는 0으로 채우기
         result = np.zeros(4, dtype=np.int32)
