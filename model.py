@@ -3,15 +3,22 @@ import numpy as np
 MAX_POWER = 15  # log2(32768), 최대 타일 지수
 GRAD_CLIP_LIMIT = 1.0
 LOSS_GRAD_CLIP_LIMIT = 10.0
+MIN_HIDDEN_SIZE = 8
+MAX_HIDDEN_SIZE = 1024
 
 
 class QNetwork:
     """2048용 Q-Network (NumPy 구현)"""
 
     def __init__(self, hidden_size: int = 128):
+        if not (MIN_HIDDEN_SIZE <= hidden_size <= MAX_HIDDEN_SIZE):
+            raise ValueError(
+                f"hidden_size must be between {MIN_HIDDEN_SIZE} and {MAX_HIDDEN_SIZE}, "
+                f"got {hidden_size}"
+            )
         self.hidden_size = hidden_size
 
-        # Xavier 초기화
+        # He 초기화 (ReLU 활성화 함수에 적합: std = sqrt(2 / fan_in))
         self.w1 = np.random.randn(16, hidden_size) * np.sqrt(2.0 / 16)
         self.b1 = np.zeros(hidden_size)
         self.w2 = np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / hidden_size)
@@ -21,6 +28,15 @@ class QNetwork:
 
         # 캐시 (역전파용)
         self._cache = {}
+
+    def copy_weights_from(self, other: "QNetwork"):
+        """다른 네트워크의 가중치를 복사 (타겟 네트워크 동기화용)"""
+        self.w1 = other.w1.copy()
+        self.b1 = other.b1.copy()
+        self.w2 = other.w2.copy()
+        self.b2 = other.b2.copy()
+        self.w3 = other.w3.copy()
+        self.b3 = other.b3.copy()
 
     def _preprocess(self, x: np.ndarray) -> np.ndarray:
         """보드 전처리: log2 스케일 정규화"""
