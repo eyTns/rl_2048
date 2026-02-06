@@ -195,28 +195,27 @@ class TDTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """매 스텝 TD 학습"""
-        # 타겟 계산: r + γ * max Q(s', a')
-        if step.done:
-            target = step.reward
-        else:
-            next_q_values = self.model.forward(step.next_state)
-            # NaN 체크
-            if np.any(np.isnan(next_q_values)):
-                next_q_max = 0.0
-            else:
-                next_q_max = float(np.max(next_q_values))
-            target = step.reward + self.gamma * next_q_max
+        """매 스텝 TD 학습 (1스텝 지연, 실제 다음 보상 사용)"""
+        if len(episode) < 2:
+            return None  # 첫 스텝: 다음 보상을 아직 모름
 
-        # 순전파 (캐시 갱신) 후 역전파
-        self.model.forward(step.state)
-        loss = self.model.backward(step.action, target, self.lr)
+        # 이전 스텝 타겟: r_{t-1} + γ * r_t
+        prev_step = episode[-2]
+        target = prev_step.reward + self.gamma * step.reward
 
+        self.model.forward(prev_step.state)
+        loss = self.model.backward(prev_step.action, target, self.lr)
         return loss
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """TD는 에피소드 끝에 추가 학습 없음"""
-        return []
+        """마지막 스텝 학습 (다음 보상 없음)"""
+        if not episode:
+            return []
+        last_step = episode[-1]
+        target = last_step.reward
+        self.model.forward(last_step.state)
+        loss = self.model.backward(last_step.action, target, self.lr)
+        return [loss]
 
 
 class MCTrainer(BaseTrainer):

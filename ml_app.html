@@ -466,34 +466,37 @@ class TDTrainer {
         const losses = [];
         let state = env.reset();
         let stepNum = 0;
+        let prevStep = null; // 1스텝 지연 학습용
 
         while (!env.done) {
             const validActions = env.getValidActions();
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            // TD target: r + γ * max Q(s', a')
-            let target;
-            if (done) {
-                target = reward;
-            } else {
-                const nextQ = this.model.forward(nextState);
-                const nextMax = Math.max(...nextQ);
-                target = reward + this.cfg.gamma * (isNaN(nextMax) ? 0 : nextMax);
+            // 이전 스텝 학습: target = r_{t-1} + γ * r_t
+            if (prevStep) {
+                const target = prevStep.reward + this.cfg.gamma * reward;
+                this.model.forward(prevStep.state);
+                const loss = this.model.backward(prevStep.action, target, this.cfg.learningRate);
+                losses.push(loss);
             }
 
-            this.model.forward(state);
-            const loss = this.model.backward(action, target, this.cfg.learningRate);
-            losses.push(loss);
-
             const qValues = this.model.forward(state);
-            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss, qValues, done, score: env.score, maxTile: env.getMaxTile() });
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
 
+            prevStep = { state: state.map(r => [...r]), action, reward };
             state = nextState;
             stepNum++;
 
-            // UI 업데이트 기회
             if (stepNum % 5 === 0) await new Promise(r => setTimeout(r, 0));
+        }
+
+        // 마지막 스텝 학습: target = r_T (다음 보상 없음)
+        if (prevStep) {
+            const target = prevStep.reward;
+            this.model.forward(prevStep.state);
+            const loss = this.model.backward(prevStep.action, target, this.cfg.learningRate);
+            losses.push(loss);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
