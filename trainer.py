@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from game2048 import Game2048
 from model import QNetwork
 
+TARGET_CLIP_RANGE = 100
+
 
 @dataclass
 class Step:
@@ -14,6 +16,28 @@ class Step:
     reward: float
     next_state: np.ndarray
     done: bool
+
+
+@dataclass
+class StepInfo:
+    """스텝 콜백 정보"""
+    step_num: int
+    state: np.ndarray
+    action: int
+    reward: float
+    loss: float | None
+    q_values: np.ndarray
+
+
+@dataclass
+class EpisodeResult:
+    """에피소드 결과"""
+    episode_num: int
+    steps: int
+    score: float
+    max_tile: int
+    losses: list[float]
+    epsilon: float
 
 
 @dataclass
@@ -43,8 +67,8 @@ class BaseTrainer:
         self.total_steps = 0
 
         # 콜백
-        self.on_step_callback: Callable | None = None
-        self.on_episode_end_callback: Callable | None = None
+        self.on_step_callback: Callable[[StepInfo], None] | None = None
+        self.on_episode_end_callback: Callable[[EpisodeResult], None] | None = None
 
     def train_one_episode(self) -> tuple[int, float, list[float]]:
         """
@@ -84,14 +108,14 @@ class BaseTrainer:
 
             # 콜백 호출
             if self.on_step_callback:
-                self.on_step_callback(
+                self.on_step_callback(StepInfo(
                     step_num=step_num,
                     state=state,
                     action=action,
                     reward=reward,
                     loss=loss,
-                    q_values=self.model.forward(state)
-                )
+                    q_values=self.model.forward(state),
+                ))
 
             state = next_state
             step_num += 1
@@ -111,14 +135,14 @@ class BaseTrainer:
 
         # 콜백 호출
         if self.on_episode_end_callback:
-            self.on_episode_end_callback(
+            self.on_episode_end_callback(EpisodeResult(
                 episode_num=self.episode_count,
                 steps=step_num,
                 score=self.env.score,
                 max_tile=int(self.env.board.max()),
                 losses=losses,
-                epsilon=self.epsilon
-            )
+                epsilon=self.epsilon,
+            ))
 
         return step_num, self.env.score, losses
 
@@ -181,7 +205,7 @@ class TDTrainer(BaseTrainer):
             target = reward + self.gamma * next_q_max
 
         # 타겟 클리핑
-        target = np.clip(target, -100, 100)
+        target = np.clip(target, -TARGET_CLIP_RANGE, TARGET_CLIP_RANGE)
 
         # 순전파 (캐시 갱신) 후 역전파
         self.model.forward(step.state)

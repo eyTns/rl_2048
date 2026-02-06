@@ -1,6 +1,8 @@
 import numpy as np
 import random
 
+FOUR_SPAWN_RATE = 0.1
+
 
 class Game2048:
     """2048 게임 환경 (RL 학습용)"""
@@ -71,7 +73,7 @@ class Game2048:
         empty_cells = list(zip(*np.where(self.board == 0)))
         if empty_cells:
             row, col = random.choice(empty_cells)
-            self.board[row, col] = 4 if random.random() < 0.1 else 2
+            self.board[row, col] = 4 if random.random() < FOUR_SPAWN_RATE else 2
 
     def _move(self, action):
         """보드 이동 및 합치기, 획득 점수 반환"""
@@ -88,9 +90,9 @@ class Game2048:
             self.ACTION_LEFT: 0,
             self.ACTION_RIGHT: 2,
         }
-        k = rotation_map[action]
+        rotation_count = rotation_map[action]
 
-        rotated = np.rot90(self.board, k)
+        rotated = np.rot90(self.board, rotation_count)
 
         for i in range(4):
             row = rotated[i]
@@ -99,7 +101,7 @@ class Game2048:
             reward += row_reward
 
         # 원래 방향으로 복원
-        self.board = np.rot90(rotated, -k)
+        self.board = np.rot90(rotated, -rotation_count)
 
         return reward
 

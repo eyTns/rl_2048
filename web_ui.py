@@ -6,6 +6,12 @@ from game2048 import Game2048
 app = FastAPI()
 game = Game2048()
 
+
+def _game_response():
+    """현재 게임 상태를 응답 딕셔너리로 반환"""
+    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+
+
 HTML_PAGE = """<!DOCTYPE html>
 <html>
 <head>
@@ -95,7 +101,7 @@ def index():
 
 @app.get("/state")
 def state():
-    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+    return _game_response()
 
 
 @app.post("/move")
@@ -104,13 +110,13 @@ def move(data: dict):
     if not isinstance(action, int) or action not in (0, 1, 2, 3):
         return {"error": "Invalid action. Must be integer 0-3."}
     game.step(action)
-    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+    return _game_response()
 
 
 @app.post("/reset")
 def reset():
     game.reset()
-    return {"board": game.get_state().tolist(), "score": game.score, "done": game.done}
+    return _game_response()
 
 
 if __name__ == "__main__":
