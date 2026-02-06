@@ -6,9 +6,6 @@ from pydantic import BaseModel, ConfigDict
 from game2048 import Game2048
 from model import QNetwork
 
-TARGET_CLIP_RANGE = 100
-
-
 class Step(BaseModel):
     """한 스텝의 경험"""
 
@@ -199,23 +196,17 @@ class TDTrainer(BaseTrainer):
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """매 스텝 TD 학습"""
-        # 보상 정규화 (log 스케일)
-        reward = np.log1p(step.reward) if step.reward > 0 else step.reward
-
         # 타겟 계산: r + γ * max Q(s', a')
         if step.done:
-            target = reward
+            target = step.reward
         else:
             next_q_values = self.model.forward(step.next_state)
             # NaN 체크
             if np.any(np.isnan(next_q_values)):
                 next_q_max = 0.0
             else:
-                next_q_max = np.max(next_q_values)
-            target = reward + self.gamma * next_q_max
-
-        # 타겟 클리핑
-        target = np.clip(target, -TARGET_CLIP_RANGE, TARGET_CLIP_RANGE)
+                next_q_max = float(np.max(next_q_values))
+            target = step.reward + self.gamma * next_q_max
 
         # 순전파 (캐시 갱신) 후 역전파
         self.model.forward(step.state)
@@ -234,7 +225,6 @@ class MCTrainer(BaseTrainer):
     def __init__(self, config: TrainConfig):
         config.method = "mc"
         super().__init__(config)
-        self.normalize_returns = True  # return 정규화 여부
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
@@ -251,10 +241,6 @@ class MCTrainer(BaseTrainer):
         for step in reversed(episode):
             G = step.reward + G
             returns.insert(0, G)
-
-        # 정규화: log 스케일
-        if self.normalize_returns:
-            returns = [np.log1p(r) if r > 0 else r for r in returns]
 
         # 각 스텝 학습
         losses = []

@@ -436,7 +436,6 @@ class QNetwork {
 // 작업 3: Trainer JS 포팅
 // ============================================================
 
-const TARGET_CLIP = 100;
 const DEFAULT_CONFIG = {
     gamma: 0.999999,
     learningRate: 0.001,
@@ -473,17 +472,15 @@ class TDTrainer {
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            // TD target
-            const normReward = reward > 0 ? Math.log1p(reward) : reward;
+            // TD target: r + γ * max Q(s', a')
             let target;
             if (done) {
-                target = normReward;
+                target = reward;
             } else {
                 const nextQ = this.model.forward(nextState);
                 const nextMax = Math.max(...nextQ);
-                target = normReward + this.cfg.gamma * (isNaN(nextMax) ? 0 : nextMax);
+                target = reward + this.cfg.gamma * (isNaN(nextMax) ? 0 : nextMax);
             }
-            target = Math.max(-TARGET_CLIP, Math.min(TARGET_CLIP, target));
 
             this.model.forward(state);
             const loss = this.model.backward(action, target, this.cfg.learningRate);
@@ -546,7 +543,7 @@ class MCTrainer {
         let G = 0;
         for (let i = episode.length - 1; i >= 0; i--) {
             G += episode[i].reward;
-            returns[i] = G > 0 ? Math.log1p(G) : G;
+            returns[i] = G;
         }
 
         // 각 스텝 학습
