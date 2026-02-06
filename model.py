@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import numpy as np
-from typing import List, Optional
 
 
 class QNetwork:
@@ -132,7 +133,7 @@ class QNetwork:
         return loss
 
     def get_action(self, state: np.ndarray,
-                   valid_actions: Optional[List[int]] = None,
+                   valid_actions: list[int] | None = None,
                    epsilon: float = 0.0) -> int:
         """
         epsilon-greedy 행동 선택

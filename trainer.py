@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import numpy as np
-from typing import List, Tuple, Optional, Callable
-from dataclasses import dataclass, field
+from typing import Callable
+from dataclasses import dataclass
 
 from game2048 import Game2048
 from model import QNetwork
@@ -43,18 +45,18 @@ class BaseTrainer:
         self.total_steps = 0
 
         # 콜백
-        self.on_step_callback: Optional[Callable] = None
-        self.on_episode_end_callback: Optional[Callable] = None
+        self.on_step_callback: Callable | None = None
+        self.on_episode_end_callback: Callable | None = None
 
-    def train_one_episode(self) -> Tuple[int, float, List[float]]:
+    def train_one_episode(self) -> tuple[int, float, list[float]]:
         """
         한 판 학습
 
         Returns:
             (총 스텝 수, 최종 점수, 손실 리스트)
         """
-        episode: List[Step] = []
-        losses: List[float] = []
+        episode: list[Step] = []
+        losses: list[float] = []
 
         state = self.env.reset()
         step_num = 0
@@ -146,11 +148,11 @@ class BaseTrainer:
                       f"max_tile={max_tile}, avg_loss={avg_loss:.4f}, "
                       f"epsilon={self.epsilon:.3f}")
 
-    def _on_step(self, step: Step, episode: List[Step]) -> Optional[float]:
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """스텝마다 호출 (구현 필요)"""
         raise NotImplementedError
 
-    def _on_episode_end(self, episode: List[Step]) -> List[float]:
+    def _on_episode_end(self, episode: list[Step]) -> list[float]:
         """에피소드 끝에 호출 (구현 필요)"""
         raise NotImplementedError
 
@@ -163,7 +165,7 @@ class TDTrainer(BaseTrainer):
         super().__init__(config)
         self.gamma = config.gamma
 
-    def _on_step(self, step: Step, episode: List[Step]) -> Optional[float]:
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """매 스텝 TD 학습"""
         # 보상 정규화 (log 스케일)
         reward = np.log1p(step.reward) if step.reward > 0 else step.reward
@@ -189,7 +191,7 @@ class TDTrainer(BaseTrainer):
 
         return loss
 
-    def _on_episode_end(self, episode: List[Step]) -> List[float]:
+    def _on_episode_end(self, episode: list[Step]) -> list[float]:
         """TD는 에피소드 끝에 추가 학습 없음"""
         return []
 
@@ -202,11 +204,11 @@ class MCTrainer(BaseTrainer):
         super().__init__(config)
         self.normalize_returns = True  # return 정규화 여부
 
-    def _on_step(self, step: Step, episode: List[Step]) -> Optional[float]:
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
         return None
 
-    def _on_episode_end(self, episode: List[Step]) -> List[float]:
+    def _on_episode_end(self, episode: list[Step]) -> list[float]:
         """에피소드 끝에 전체 학습"""
         if not episode:
             return []
