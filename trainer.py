@@ -90,6 +90,10 @@ class BaseTrainer:
             valid_actions = self.env.get_valid_actions()
             action = self.model.get_action(state, valid_actions, self.epsilon)
 
+            # get_action 내부 forward 결과 재사용 (탐험 시에는 캐시 없을 수 있음)
+            cached_q = self.model._cache.get("z3")
+            q_values = cached_q[0] if cached_q is not None else self.model.forward(state)
+
             # 환경 스텝
             next_state, reward, done, info = self.env.step(action)
 
@@ -108,7 +112,7 @@ class BaseTrainer:
             if loss is not None:
                 losses.append(loss)
 
-            # 콜백 호출
+            # 콜백 호출 (forward 재호출 없이 캐시된 q_values 사용)
             if self.on_step_callback:
                 self.on_step_callback(
                     StepInfo(
@@ -117,7 +121,7 @@ class BaseTrainer:
                         action=action,
                         reward=reward,
                         loss=loss,
-                        q_values=self.model.forward(state),
+                        q_values=q_values,
                     )
                 )
 
@@ -151,7 +155,7 @@ class BaseTrainer:
 
         return step_num, self.env.score, losses
 
-    def train(self, episodes: int, print_every: int = 100):
+    def train(self, episodes: int, print_every: int = 500):
         """
         여러 판 학습
 
@@ -256,7 +260,8 @@ class MCTrainer(BaseTrainer):
         G = 0.0
         for step in reversed(episode):
             G = self._ln_reward(step.reward) + self.gamma * G
-            returns.insert(0, G)
+            returns.append(G)
+        returns.reverse()
 
         # 각 스텝 학습
         losses = []

@@ -135,34 +135,37 @@ class Game2048:
 
         return result, reward
 
+    @staticmethod
+    def _can_move_row_left(row) -> bool:
+        """한 줄이 왼쪽으로 이동/합치기 가능한지 조건만으로 판단"""
+        for i in range(3):
+            if row[i] == 0 and row[i + 1] != 0:
+                return True
+            if row[i] != 0 and row[i] == row[i + 1]:
+                return True
+        return False
+
+    def _can_move_direction(self, action: int) -> bool:
+        """특정 방향으로 이동 가능한지 확인 (보드 복사/이동 없이)"""
+        rotated = np.rot90(self.board, self.ROTATION_MAP[action])
+        for i in range(4):
+            if self._can_move_row_left(rotated[i]):
+                return True
+        return False
+
     def _can_move(self):
         """이동 가능 여부 확인"""
-        # 빈 칸이 있으면 이동 가능
-        if np.any(self.board == 0):
-            return True
-
-        # 인접한 같은 숫자가 있으면 이동 가능
-        for i in range(4):
-            for j in range(4):
-                current = self.board[i, j]
-                # 오른쪽 확인
-                if j + 1 < 4 and self.board[i, j + 1] == current:
-                    return True
-                # 아래 확인
-                if i + 1 < 4 and self.board[i + 1, j] == current:
-                    return True
-
+        for action in range(4):
+            if self._can_move_direction(action):
+                return True
         return False
 
     def get_valid_actions(self):
-        """유효한 행동 목록 반환"""
+        """유효한 행동 목록 반환 (조건 비교만, 보드 복사/이동 없음)"""
         valid = []
         for action in range(4):
-            old_board = self.board.copy()
-            self._move(action)
-            if not np.array_equal(old_board, self.board):
+            if self._can_move_direction(action):
                 valid.append(action)
-            self.board = old_board
         return valid
 
     def render(self):
