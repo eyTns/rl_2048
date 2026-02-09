@@ -26,20 +26,42 @@ class Game2048:
         ACTION_RIGHT: 2,
     }
 
-    def __init__(self):
+    # 커리큘럼 모드용: 2^1 ~ 2^10
+    CURRICULUM_TILES = [2 ** i for i in range(1, 11)]
+
+    def __init__(self, curriculum_mode: bool = False):
         self.board = None
         self.score = 0
         self.done = False
+        self.curriculum_mode = curriculum_mode
         self.reset()
 
-    def reset(self):
-        """게임 초기화, 초기 상태 반환"""
+    def reset(self, curriculum_mode: bool | None = None):
+        """게임 초기화, 초기 상태 반환
+
+        Args:
+            curriculum_mode: None이면 __init__ 설정 사용, True/False면 이번 판만 오버라이드
+        """
+        mode = curriculum_mode if curriculum_mode is not None else self.curriculum_mode
         self.board = np.zeros((4, 4), dtype=np.int32)
         self.score = 0
         self.done = False
-        self._spawn_tile()
-        self._spawn_tile()
+
+        if mode:
+            self._reset_curriculum()
+        else:
+            self._spawn_tile()
+            self._spawn_tile()
+
         return self.get_state()
+
+    def _reset_curriculum(self):
+        """커리큘럼 모드 초기화: 하단줄 랜덤 내림차순 + 우상단 2"""
+        # 2^1 ~ 2^10 중 4개 복원추출 → 내림차순 정렬
+        tiles = sorted(random.choices(self.CURRICULUM_TILES, k=4), reverse=True)
+        self.board[3] = tiles
+        # 우상단에 2 고정
+        self.board[0, 3] = 2
 
     def get_state(self):
         """현재 보드 상태 반환 (4x4 numpy array)"""
