@@ -120,6 +120,7 @@
             <button id="btnSave">저장</button>
             <div class="sep"></div>
             <button id="btnPlay" class="accent">게임 실행</button>
+            <button id="btnStep">1스텝</button>
             <div class="sep"></div>
             <button id="btnTD">TD 학습</button>
             <button id="btnMC">MC 학습</button>
@@ -747,6 +748,8 @@ let currentEpisode = 0;
 let activeTrainer = null;  // 현재 실행 중인 트레이너 (중지용)
 let playAborted = false;   // 게임 실행 중지 플래그
 let running = false;
+let stepMode = false;      // 1스텝 모드 활성 여부
+let stepCount = 0;         // 1스텝 모드 스텝 카운터
 
 // --- 게임판 렌더링 ---
 function renderBoard(board) {
@@ -940,6 +943,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 
 document.getElementById('btnPlay').addEventListener('click', async () => {
     if (running) return;
+    stepMode = false;
     setRunning(true);
     playAborted = false;
     setStatus('게임 실행 중...');
@@ -960,6 +964,36 @@ document.getElementById('btnPlay').addEventListener('click', async () => {
     const msg = playAborted ? '게임 중단' : `게임 종료 · 점수 ${env.score} · 최고 타일 ${env.getMaxTile()}`;
     setStatus(msg);
     setRunning(false);
+});
+
+document.getElementById('btnStep').addEventListener('click', () => {
+    if (running) return;
+    // 첫 클릭이거나 이전 게임이 끝났으면 새 게임 시작
+    if (!stepMode || env.done) {
+        env = new Game2048();
+        env.reset();
+        stepCount = 0;
+        stepMode = true;
+        renderBoard(env.getState());
+        const qValues = model.forward(env.getState());
+        updateQBars(qValues, -1);
+        updateInfo({ score: 0, maxTile: env.getMaxTile(), step: 0, reward: 0 });
+        setStatus('1스텝 모드 · 클릭하여 진행');
+        return;
+    }
+    // 1스텝 실행
+    const validActions = env.getValidActions();
+    if (validActions.length === 0) return;
+    const action = model.getAction(env.getState(), validActions, 0);
+    const qValues = model.forward(env.getState());
+    const { reward } = env.step(action);
+    stepCount++;
+    onStepUI({ stepNum: stepCount, state: env.getState(), action, reward, qValues, done: env.done, score: env.score, maxTile: env.getMaxTile() });
+    if (env.done) {
+        setStatus(`게임 종료 · 점수 ${env.score} · 최고 타일 ${env.getMaxTile()}`);
+    } else {
+        setStatus(`1스텝 모드 · 스텝 ${stepCount}`);
+    }
 });
 
 document.getElementById('btnTD').addEventListener('click', async () => {
