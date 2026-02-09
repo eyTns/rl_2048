@@ -616,9 +616,10 @@ class TDTrainer {
                 // }
                 // losses.push(totalLoss / 8);
 
-                // 원본만 사용
-                const qNext = this.model.forward(state)[action];
-                const target = r + this.cfg.gamma * qNext;
+                // 원본만 사용 — 게임오버 시 부트스트랩 안함
+                const target = done
+                    ? r
+                    : r + this.cfg.gamma * this.model.forward(state)[action];
                 this.model.forward(prevStep.state);
                 losses.push(this.model.backward(prevStep.action, target, this.cfg.learningRate));
             }
@@ -637,26 +638,10 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // 마지막 스텝: target = √r
+        // 마지막 스텝: 게임오버 → Q target = 0
         if (prevStep) {
-            const r = scaleReward(prevStep.reward);
-            // D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
-            // const trainItems = [];
-            // for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-            //     const augPrev = augmentBoard(prevStep.state, rotK, flip);
-            //     const augPrevAction = actionMap[prevStep.action];
-            //     trainItems.push({ state: augPrev, action: augPrevAction, target: r });
-            // }
-            // let totalLoss = 0;
-            // for (const item of trainItems) {
-            //     this.model.forward(item.state);
-            //     totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
-            // }
-            // losses.push(totalLoss / 8);
-
-            // 원본만 사용
             this.model.forward(prevStep.state);
-            losses.push(this.model.backward(prevStep.action, r, this.cfg.learningRate));
+            losses.push(this.model.backward(prevStep.action, 0, this.cfg.learningRate));
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
@@ -696,7 +681,7 @@ class MCTrainer {
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
             const qValues = this.model.forward(state);
-            episode.push({ state: state.map(r => [...r]), action, reward, qValues });
+            episode.push({ state: state.map(r => [...r]), action, reward, done, qValues });
 
             if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
 
@@ -713,10 +698,15 @@ class MCTrainer {
         if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
 
         // Return 계산 (역순) — √reward + gamma 할인
+        // 게임오버 스텝: G = 0 (미래 없음)
         const returns = new Array(episode.length);
         let G = 0;
         for (let i = episode.length - 1; i >= 0; i--) {
-            G = scaleReward(episode[i].reward) + this.cfg.gamma * G;
+            if (episode[i].done) {
+                G = 0;
+            } else {
+                G = scaleReward(episode[i].reward) + this.cfg.gamma * G;
+            }
             returns[i] = G;
         }
 

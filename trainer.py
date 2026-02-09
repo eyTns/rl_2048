@@ -245,8 +245,11 @@ class TDTrainer(BaseTrainer):
         #     train_items.append((aug_prev, aug_prev_action, target))
 
         # 원본만 사용
-        q_next = float(self.model.forward(curr_step.state)[curr_step.action])
-        target = r + self.gamma * q_next
+        if curr_step.done:
+            target = r
+        else:
+            q_next = float(self.model.forward(curr_step.state)[curr_step.action])
+            target = r + self.gamma * q_next
 
         self.model.forward(prev_step.state)
         total_loss = self.model.backward(prev_step.action, target, self.lr)
@@ -254,27 +257,14 @@ class TDTrainer(BaseTrainer):
         return total_loss
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습 (다음 행동 없음)"""
+        """마지막 스텝 학습: 게임오버 → Q target = 0"""
         if not episode:
             return []
         last_step = episode[-1]
-        r = self._scale_reward(last_step.reward)
-
-        # D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
-        # train_items = []
-        # for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
-        #     aug_state = _augment_board(last_step.state, rot_k, flip)
-        #     aug_action = action_map[last_step.action]
-        #     train_items.append((aug_state, aug_action, r))
-        #
-        # total_loss = 0.0
-        # for aug_state, aug_action, target in train_items:
-        #     self.model.forward(aug_state)
-        #     total_loss += self.model.backward(aug_action, target, self.lr)
 
         # 원본만 사용
         self.model.forward(last_step.state)
-        total_loss = self.model.backward(last_step.action, r, self.lr)
+        total_loss = self.model.backward(last_step.action, 0.0, self.lr)
 
         return [total_loss]
 
@@ -301,10 +291,14 @@ class MCTrainer(BaseTrainer):
             return []
 
         # 역순으로 할인 return 계산: G_t = √r_t + γ * G_{t+1}
+        # 게임오버 스텝: G = 0 (미래 없음)
         returns = []
         G = 0.0
         for step in reversed(episode):
-            G = self._scale_reward(step.reward) + self.gamma * G
+            if step.done:
+                G = 0.0
+            else:
+                G = self._scale_reward(step.reward) + self.gamma * G
             returns.append(G)
         returns.reverse()
 
