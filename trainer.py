@@ -46,7 +46,7 @@ class TrainConfig(BaseModel):
     """학습 설정"""
 
     method: Literal["td", "mc"] = "td"
-    gamma: float = 0.999999  # TD용 할인율
+    gamma: float = 0.9999  # TD용 할인율
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
@@ -187,32 +187,42 @@ class BaseTrainer:
 
 
 class TDTrainer(BaseTrainer):
-    """TD (Temporal Difference) 학습기"""
+    """SARSA 학습기: target = ln(r) + γ * Q(s', a')"""
 
     def __init__(self, config: TrainConfig):
         config.method = "td"
         super().__init__(config)
         self.gamma = config.gamma
 
-    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """매 스텝 TD 학습 (1스텝 지연, 실제 다음 보상 사용)"""
-        if len(episode) < 2:
-            return None  # 첫 스텝: 다음 보상을 아직 모름
+    def _ln_reward(self, reward: float) -> float:
+        """보상 변환: ln(합쳐진 타일값)"""
+        if reward > 0:
+            return float(np.log(reward))
+        return 0.0
 
-        # 이전 스텝 타겟: r_{t-1} + γ * r_t
+    def _on_step(self, step: Step, episode: list[Step]) -> float | None:
+        """SARSA: 1스텝 지연, target = ln(r) + γ * Q(s_t, a_t)"""
+        if len(episode) < 2:
+            return None  # 첫 스텝: 다음 행동의 Q값을 아직 모름
+
         prev_step = episode[-2]
-        target = prev_step.reward + self.gamma * step.reward
+        curr_step = episode[-1]
+
+        # SARSA target: ln(r_{t-1}) + γ * Q(s_t, a_t)
+        r = self._ln_reward(prev_step.reward)
+        q_next = float(self.model.forward(curr_step.state)[curr_step.action])
+        target = r + self.gamma * q_next
 
         self.model.forward(prev_step.state)
         loss = self.model.backward(prev_step.action, target, self.lr)
         return loss
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습 (다음 보상 없음)"""
+        """마지막 스텝 학습 (다음 행동 없음, target = ln(r))"""
         if not episode:
             return []
         last_step = episode[-1]
-        target = last_step.reward
+        target = self._ln_reward(last_step.reward)
         self.model.forward(last_step.state)
         loss = self.model.backward(last_step.action, target, self.lr)
         return [loss]
@@ -266,9 +276,9 @@ def create_trainer(config: TrainConfig) -> BaseTrainer:
 # 테스트
 if __name__ == "__main__":
     print("=" * 50)
-    print("TD Trainer 테스트 (gamma=0.999999)")
+    print("SARSA Trainer 테스트 (gamma=0.9999)")
     print("=" * 50)
-    td_config = TrainConfig(method="td", gamma=0.999999)
+    td_config = TrainConfig(method="td", gamma=0.9999)
     td_trainer = create_trainer(td_config)
     td_trainer.train(episodes=100, print_every=20)
 

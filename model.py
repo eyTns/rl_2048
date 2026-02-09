@@ -1,8 +1,8 @@
 import numpy as np
 
 MAX_POWER = 15  # log2(32768), 최대 타일 지수
-GRAD_CLIP_LIMIT = 1.0
-LOSS_GRAD_CLIP_LIMIT = 10.0
+GRAD_NORM_LIMIT = 1.0
+HUBER_DELTA = 1.0
 
 
 class QNetwork:
@@ -37,8 +37,14 @@ class QNetwork:
         return grad * (x > 0)
 
     def _clip_gradients(self, *grads):
-        """그래디언트 클리핑"""
-        return [np.clip(g, -GRAD_CLIP_LIMIT, GRAD_CLIP_LIMIT) for g in grads]
+        """그래디언트 노름 클리핑 (방향 보존)"""
+        clipped = []
+        for g in grads:
+            norm = np.linalg.norm(g)
+            if norm > GRAD_NORM_LIMIT:
+                g = g * (GRAD_NORM_LIMIT / norm)
+            clipped.append(g)
+        return clipped
 
     def forward(self, state: np.ndarray) -> np.ndarray:
         """
@@ -89,13 +95,16 @@ class QNetwork:
         if np.any(np.isnan(q_values)):
             return 0.0
 
-        # 손실: (Q(s,a) - target)^2
+        # Huber Loss (δ=1.0): 큰 오차에 둔감하여 발산 방지
         q_value = q_values[0, action]
-        loss = (q_value - target) ** 2
-        dloss = 2 * (q_value - target)
-
-        # Gradient clipping
-        dloss = np.clip(dloss, -LOSS_GRAD_CLIP_LIMIT, LOSS_GRAD_CLIP_LIMIT)
+        error = q_value - target
+        abs_error = abs(error)
+        if abs_error <= HUBER_DELTA:
+            loss = 0.5 * error ** 2
+            dloss = error
+        else:
+            loss = HUBER_DELTA * (abs_error - 0.5 * HUBER_DELTA)
+            dloss = HUBER_DELTA * np.sign(error)
 
         # 출력층 기울기
         dz3 = np.zeros_like(q_values)
