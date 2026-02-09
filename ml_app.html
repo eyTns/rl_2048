@@ -625,7 +625,10 @@ class TDTrainer {
             if (stepNum % 5 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        // 마지막 스텝: target = ln(r_T) — 고정값이므로 선계산 불필요
+        // 게임오버 보드 표시
+        if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
+
+        // 마지막 스텝: target = r/512 — 고정값이므로 선계산 불필요
         if (prevStep) {
             const r = scaleReward(prevStep.reward);
             const trainItems = [];
@@ -687,6 +690,9 @@ class MCTrainer {
             stepNum++;
             if (stepNum % 10 === 0) await new Promise(r => setTimeout(r, 0));
         }
+
+        // 게임오버 보드 표시
+        if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
 
         // 중단된 경우 학습하지 않음
         if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
