@@ -592,27 +592,32 @@ class TDTrainer {
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            // SARSA: 이전 스텝 학습 — target = ln(r) + γ * Q(s', a')
+            // SARSA: 이전 스텝 학습 — target = r/100 + γ * Q(s', a')
             if (prevStep) {
                 const r = scaleReward(prevStep.reward);
-                // 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
-                const trainItems = [];
-                for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-                    const augCurr = augmentBoard(state, rotK, flip);
-                    const augCurrAction = actionMap[action];
-                    const qNext = this.model.forward(augCurr)[augCurrAction];
-                    const target = r + this.cfg.gamma * qNext;
-                    const augPrev = augmentBoard(prevStep.state, rotK, flip);
-                    const augPrevAction = actionMap[prevStep.action];
-                    trainItems.push({ state: augPrev, action: augPrevAction, target });
-                }
-                // 2단계: 고정된 target으로 학습
-                let totalLoss = 0;
-                for (const item of trainItems) {
-                    this.model.forward(item.state);
-                    totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
-                }
-                losses.push(totalLoss / 8);
+                // D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
+                // const trainItems = [];
+                // for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                //     const augCurr = augmentBoard(state, rotK, flip);
+                //     const augCurrAction = actionMap[action];
+                //     const qNext = this.model.forward(augCurr)[augCurrAction];
+                //     const target = r + this.cfg.gamma * qNext;
+                //     const augPrev = augmentBoard(prevStep.state, rotK, flip);
+                //     const augPrevAction = actionMap[prevStep.action];
+                //     trainItems.push({ state: augPrev, action: augPrevAction, target });
+                // }
+                // let totalLoss = 0;
+                // for (const item of trainItems) {
+                //     this.model.forward(item.state);
+                //     totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+                // }
+                // losses.push(totalLoss / 8);
+
+                // 원본만 사용
+                const qNext = this.model.forward(state)[action];
+                const target = r + this.cfg.gamma * qNext;
+                this.model.forward(prevStep.state);
+                losses.push(this.model.backward(prevStep.action, target, this.cfg.learningRate));
             }
 
             const qValues = this.model.forward(state);
@@ -629,21 +634,26 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // 마지막 스텝: target = r/512 — 고정값이므로 선계산 불필요
+        // 마지막 스텝: target = r/100
         if (prevStep) {
             const r = scaleReward(prevStep.reward);
-            const trainItems = [];
-            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-                const augPrev = augmentBoard(prevStep.state, rotK, flip);
-                const augPrevAction = actionMap[prevStep.action];
-                trainItems.push({ state: augPrev, action: augPrevAction, target: r });
-            }
-            let totalLoss = 0;
-            for (const item of trainItems) {
-                this.model.forward(item.state);
-                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
-            }
-            losses.push(totalLoss / 8);
+            // D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
+            // const trainItems = [];
+            // for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+            //     const augPrev = augmentBoard(prevStep.state, rotK, flip);
+            //     const augPrevAction = actionMap[prevStep.action];
+            //     trainItems.push({ state: augPrev, action: augPrevAction, target: r });
+            // }
+            // let totalLoss = 0;
+            // for (const item of trainItems) {
+            //     this.model.forward(item.state);
+            //     totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+            // }
+            // losses.push(totalLoss / 8);
+
+            // 원본만 사용
+            this.model.forward(prevStep.state);
+            losses.push(this.model.backward(prevStep.action, r, this.cfg.learningRate));
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
@@ -707,23 +717,26 @@ class MCTrainer {
             returns[i] = G;
         }
 
-        // 각 스텝 학습 — D4 8x 증강 (선계산 후 학습)
+        // 각 스텝 학습
         const losses = [];
         for (let i = 0; i < episode.length; i++) {
-            // 1단계: 8개 증강 보드/액션 선계산 (target은 returns[i]로 고정)
-            const trainItems = [];
-            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-                const augState = augmentBoard(episode[i].state, rotK, flip);
-                const augAction = actionMap[episode[i].action];
-                trainItems.push({ state: augState, action: augAction, target: returns[i] });
-            }
-            // 2단계: 고정된 target으로 학습
-            let totalLoss = 0;
-            for (const item of trainItems) {
-                this.model.forward(item.state);
-                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
-            }
-            losses.push(totalLoss / 8);
+            // D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
+            // const trainItems = [];
+            // for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+            //     const augState = augmentBoard(episode[i].state, rotK, flip);
+            //     const augAction = actionMap[episode[i].action];
+            //     trainItems.push({ state: augState, action: augAction, target: returns[i] });
+            // }
+            // let totalLoss = 0;
+            // for (const item of trainItems) {
+            //     this.model.forward(item.state);
+            //     totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+            // }
+            // losses.push(totalLoss / 8);
+
+            // 원본만 사용
+            this.model.forward(episode[i].state);
+            losses.push(this.model.backward(episode[i].action, returns[i], this.cfg.learningRate));
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
