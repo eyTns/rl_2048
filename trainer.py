@@ -69,8 +69,8 @@ class TrainConfig(BaseModel):
     method: Literal["td", "mc"] = "td"
     gamma: float = 0.9999  # TD용 할인율
     learning_rate: float = 0.001
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.05
+    epsilon_start: float = 0.05
+    epsilon_end: float = 0.0001
     epsilon_decay: float = 0.99
     hidden_size: int = 256
 
