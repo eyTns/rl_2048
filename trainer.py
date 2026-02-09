@@ -234,6 +234,13 @@ class MCTrainer(BaseTrainer):
     def __init__(self, config: TrainConfig):
         config.method = "mc"
         super().__init__(config)
+        self.gamma = config.gamma
+
+    def _ln_reward(self, reward: float) -> float:
+        """보상 변환: ln(합쳐진 타일값)"""
+        if reward > 0:
+            return float(np.log(reward))
+        return 0.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
@@ -244,11 +251,11 @@ class MCTrainer(BaseTrainer):
         if not episode:
             return []
 
-        # 역순으로 return 계산 (감마=1, 할인 없음)
+        # 역순으로 할인 return 계산: G_t = ln(r_t) + γ * G_{t+1}
         returns = []
         G = 0.0
         for step in reversed(episode):
-            G = step.reward + G
+            G = self._ln_reward(step.reward) + self.gamma * G
             returns.insert(0, G)
 
         # 각 스텝 학습
