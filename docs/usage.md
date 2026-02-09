@@ -63,35 +63,42 @@ action 값:
 ```python
 from trainer import TrainConfig, create_trainer
 
-# TD 학습 (gamma=0.999999)
-config = TrainConfig(method='td', gamma=0.999999)
+# SARSA 학습 (gamma=0.9999)
+config = TrainConfig(method='td', gamma=0.9999)
 trainer = create_trainer(config)
-trainer.train(episodes=1000, print_every=100)
+trainer.train(episodes=1000, print_every=500)
 
 # Monte Carlo 학습
 config = TrainConfig(method='mc')
 trainer = create_trainer(config)
-trainer.train(episodes=1000, print_every=100)
+trainer.train(episodes=1000, print_every=500)
 ```
 
 ### 설정 옵션 (TrainConfig)
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
-| `method` | `'td'` | 학습 방식: `'td'` 또는 `'mc'` |
-| `gamma` | `0.999999` | 할인율 (TD 전용) |
+| `method` | `'td'` | 학습 방식: `'td'` (SARSA) 또는 `'mc'` |
+| `gamma` | `0.9999` | 할인율 (TD, MC 공통) |
 | `learning_rate` | `0.001` | 학습률 |
 | `epsilon_start` | `1.0` | 초기 탐험률 |
-| `epsilon_end` | `0.01` | 최소 탐험률 |
-| `epsilon_decay` | `0.995` | 탐험률 감소율 |
+| `epsilon_end` | `0.05` | 최소 탐험률 |
+| `epsilon_decay` | `0.99` | 탐험률 감소율 |
 | `hidden_size` | `128` | 은닉층 크기 |
 
-### TD vs Monte Carlo
+### TD (SARSA) vs Monte Carlo
 
 | 방식 | 학습 시점 | 타겟 계산 | 특징 |
 |------|----------|----------|------|
-| TD | 매 스텝 | `r + γ × max Q(s')` | 빠른 학습, γ 감쇠 문제 |
-| MC | 에피소드 끝 | 실제 누적 보상 | γ 없음, 분산 큼 |
+| TD (SARSA) | 매 스텝 | `r/100 + γ × Q(s', a')` | 빠른 학습, 실제 다음 행동 사용 |
+| MC | 에피소드 끝 | `G = r/100 + γ × G` (할인 누적) | γ 할인 적용, 분산 큼 |
+
+**공통 적용 기법:**
+- **보상 스케일링**: score / 100 (Q값 × 100 ≈ 예상 실제 점수)
+- **Huber Loss** (δ=1.0): MSE 대신 사용하여 큰 오차에 둔감하게 처리 (발산 방지)
+- **그래디언트 노름 클리핑** (1.0): 방향을 보존하면서 크기만 제한
+- **D4 대칭 증강**: 각 보드를 8개 대칭 변환 (4회전 × 2대칭)으로 학습 데이터 8배 증강
+- **Bootstrap explosion 방지**: D4 증강 시 8개 타겟을 먼저 계산(freeze)한 후 학습
 
 ### 시각화 콜백
 
@@ -120,29 +127,48 @@ trainer.model.save("model.npz")
 trainer.model.load("model.npz")
 ```
 
+### 커리큘럼 모드
+
+```python
+from game2048 import Game2048
+
+# 커리큘럼 모드: 하단줄에 정렬된 랜덤 타일, 우상단에 2
+env = Game2048(curriculum_mode=True)
+state = env.reset()
+
+# 개별 판만 오버라이드
+state = env.reset(curriculum_mode=False)  # 이번 판만 일반 모드
+```
+
 ### 구현 구조
 
 ```
-┌─────────────────────────────────────────┐
-│              Game2048 (env)             │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│   Game2048 (env) — 커리큘럼 모드 지원        │
+└──────────────────────────────────────────────┘
                     ↓
-┌─────────────────────────────────────────┐
-│         QNetwork (NumPy 기반)           │
-│  - 입력: 4x4 보드 (log2 정규화)         │
-│  - 은닉층: ReLU × 2                     │
-│  - 출력: 4개 Q값                        │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│          QNetwork (NumPy 기반)               │
+│  - 입력: 4x4 보드 → 원핫 인코딩 (256차원)    │
+│  - 은닉층: ReLU × 2 (128)                    │
+│  - 출력: 4개 Q값                             │
+│  - 손실: Huber Loss (δ=1.0)                  │
+│  - 클리핑: 그래디언트 노름 (1.0)              │
+└──────────────────────────────────────────────┘
                     ↓
-┌─────────────────────────────────────────┐
-│            BaseTrainer                  │
-│  - train_one_episode()                  │
-│  - 콜백 지원                            │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│            BaseTrainer                       │
+│  - train_one_episode()                       │
+│  - D4 대칭 증강 (8배)                        │
+│  - 보상 스케일링 (score / 100)               │
+│  - 콜백 지원                                 │
+└──────────────────────────────────────────────┘
          ↙                    ↘
-┌─────────────────┐    ┌─────────────────┐
-│   TDTrainer     │    │   MCTrainer     │
-│ 스텝마다 학습   │    │ 에피소드 끝     │
-│ gamma 적용      │    │ 할인 없음       │
-└─────────────────┘    └─────────────────┘
+┌──────────────────┐    ┌──────────────────┐
+│  TDTrainer       │    │  MCTrainer       │
+│  (SARSA)         │    │  에피소드 끝     │
+│  스텝마다 학습   │    │  gamma 할인 적용 │
+│  gamma 적용      │    │  D4 증강 적용    │
+│  D4 증강 적용    │    │                  │
+└──────────────────┘    └──────────────────┘
 ```
