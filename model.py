@@ -1,7 +1,7 @@
 import numpy as np
 
-NUM_CHANNELS = 16  # 원핫 채널 수: 0, 2^1, 2^2, ..., 2^15
-INPUT_SIZE = 4 * 4 * NUM_CHANNELS  # 256
+NUM_CHANNELS = 16  # 원핫 채널 수: exponent 1~16 (2^1 ~ 2^16)
+INPUT_SIZE = 4 * 4 * NUM_CHANNELS  # 256 (16셀 × 16채널)
 GRAD_NORM_LIMIT = 1.0
 HUBER_DELTA = 1.0
 
@@ -24,21 +24,18 @@ class QNetwork:
         self._cache = {}
 
     def _preprocess(self, x: np.ndarray) -> np.ndarray:
-        """보드 전처리: 원핫 인코딩 (각 셀 → 16채널)"""
-        x = x.reshape(-1, 16).astype(np.int32)
-        batch = x.shape[0]
-        onehot = np.zeros((batch, INPUT_SIZE), dtype=np.float32)
+        """보드 전처리: 원핫 인코딩 (각 셀 → 16채널 원핫)"""
+        flat = x.reshape(-1, 16).astype(np.int32)
+        batch = flat.shape[0]
+        result = np.zeros((batch, INPUT_SIZE), dtype=np.float32)
         for b in range(batch):
             for i in range(16):
-                v = x[b, i]
-                if v == 0:
-                    ch = 0
-                else:
-                    ch = int(np.log2(v))
-                    if ch >= NUM_CHANNELS:
-                        ch = NUM_CHANNELS - 1
-                onehot[b, i * NUM_CHANNELS + ch] = 1.0
-        return onehot
+                v = flat[b, i]
+                if v > 0:
+                    exp = int(np.log2(v))  # 2→1, 4→2, ..., 65536→16
+                    if 1 <= exp <= NUM_CHANNELS:
+                        result[b, i * NUM_CHANNELS + exp - 1] = 1.0
+        return result
 
     def _relu(self, x: np.ndarray) -> np.ndarray:
         return np.maximum(0, x)

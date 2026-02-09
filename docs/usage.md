@@ -81,8 +81,8 @@ trainer.train(episodes=1000, print_every=500)
 | `method` | `'td'` | 학습 방식: `'td'` (SARSA) 또는 `'mc'` |
 | `gamma` | `0.9999` | 할인율 (TD, MC 공통) |
 | `learning_rate` | `0.001` | 학습률 |
-| `epsilon_start` | `1.0` | 초기 탐험률 |
-| `epsilon_end` | `0.05` | 최소 탐험률 |
+| `epsilon_start` | `0.05` | 초기 탐험률 |
+| `epsilon_end` | `0.0001` | 최소 탐험률 |
 | `epsilon_decay` | `0.99` | 탐험률 감소율 |
 | `hidden_size` | `256` | 은닉층 크기 |
 
@@ -149,7 +149,7 @@ state = env.reset(curriculum_mode=False)  # 이번 판만 일반 모드
                     ↓
 ┌──────────────────────────────────────────────┐
 │          QNetwork (NumPy 기반)               │
-│  - 입력: 4x4 보드 → 원핫 인코딩 (256차원)    │
+│  - 입력: 4x4 보드 → 정규화 지수 (16차원)      │
 │  - 은닉층: ReLU × 2 (256)                    │
 │  - 출력: 4개 Q값                             │
 │  - 손실: Huber Loss (δ=1.0)                  │
