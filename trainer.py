@@ -220,8 +220,8 @@ class TDTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
-        """보상 스케일링: score / 512"""
-        return reward / 512.0
+        """보상 스케일링: score / 100"""
+        return reward / 100.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습 (선계산 후 학습)"""
@@ -284,8 +284,8 @@ class MCTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
-        """보상 스케일링: score / 512"""
-        return reward / 512.0
+        """보상 스케일링: score / 100"""
+        return reward / 100.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""

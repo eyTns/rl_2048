@@ -528,7 +528,7 @@ const DEFAULT_CONFIG = {
 };
 
 function scaleReward(reward) {
-    return reward / 512.0;
+    return reward / 100.0;
 }
 
 // D4 대칭 그룹: [rot_k, flip, actionMap]
@@ -774,7 +774,7 @@ function updateQBars(qValues, bestAction) {
         const val = row.querySelector('.q-bar-val');
         const pct = Math.abs(qValues[a]) / maxAbs * 100;
         fill.style.width = pct + '%';
-        val.textContent = qValues[a].toFixed(3);
+        val.textContent = qValues[a].toFixed(4);
         row.className = 'q-bar-row ' + (a === bestAction ? 'q-best' : 'q-normal');
     }
 }
@@ -827,15 +827,15 @@ function drawNetwork() {
                 if (count === 0) continue;
                 const avg = sum / count;
                 const absAvg = Math.abs(avg);
-                const thickness = Math.min(3, absAvg * 2);
+                const thickness = Math.min(3, absAvg * 8);
                 if (thickness < 0.1) continue;
 
                 ctx.beginPath();
                 ctx.moveTo(layerX[li], nodeY(li, si));
                 ctx.lineTo(layerX[li + 1], nodeY(li + 1, di));
                 ctx.strokeStyle = avg > 0
-                    ? `rgba(59, 130, 246, ${Math.min(0.6, absAvg)})`   // 파랑
-                    : `rgba(239, 68, 68, ${Math.min(0.6, absAvg)})`;    // 빨강
+                    ? `rgba(59, 130, 246, ${Math.min(0.8, absAvg * 4)})`   // 파랑
+                    : `rgba(239, 68, 68, ${Math.min(0.8, absAvg * 4)})`;    // 빨강
                 ctx.lineWidth = thickness;
                 ctx.stroke();
             }
