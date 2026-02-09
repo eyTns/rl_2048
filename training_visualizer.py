@@ -83,13 +83,16 @@ class TrainingMetrics:
         self.max_q_values.append(max_q)
 
         if model:
-            self.weight_norms.append(
-                {
-                    "w1": float(np.linalg.norm(model.w1)),
-                    "w2": float(np.linalg.norm(model.w2)),
-                    "w3": float(np.linalg.norm(model.w3)),
-                }
-            )
+            norms = {
+                "w1": float(np.linalg.norm(model.w1)),
+                "w2": float(np.linalg.norm(model.w2)),
+                "w3": float(np.linalg.norm(model.w3)),
+            }
+            if hasattr(model, "conv_a_w"):
+                norms["conv_a"] = float(np.linalg.norm(model.conv_a_w))
+            if hasattr(model, "conv_b_w"):
+                norms["conv_b"] = float(np.linalg.norm(model.conv_b_w))
+            self.weight_norms.append(norms)
 
         self.total_steps += result.steps
         self.best_score = max(self.best_score, result.score)
