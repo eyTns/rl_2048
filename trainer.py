@@ -6,6 +6,27 @@ from pydantic import BaseModel, ConfigDict
 from game2048 import Game2048
 from model import QNetwork
 
+# D4 대칭군: 4회전 × 2대칭 = 8변환
+# (rot_k, flip, action_map) — action: 0=상, 1=하, 2=좌, 3=우
+BOARD_AUGMENTATIONS = [
+    (0, False, [0, 1, 2, 3]),  # 원본
+    (1, False, [2, 3, 1, 0]),  # 90° 반시계
+    (2, False, [1, 0, 3, 2]),  # 180°
+    (3, False, [3, 2, 0, 1]),  # 270° 반시계
+    (0, True,  [0, 1, 3, 2]),  # 좌우 대칭
+    (1, True,  [3, 2, 1, 0]),  # 90° + 좌우 대칭
+    (2, True,  [1, 0, 2, 3]),  # 180° + 좌우 대칭
+    (3, True,  [2, 3, 0, 1]),  # 270° + 좌우 대칭
+]
+
+
+def _augment_board(state: np.ndarray, rot_k: int, flip: bool) -> np.ndarray:
+    """보드 변환: 회전 + 대칭"""
+    s = np.rot90(state, rot_k)
+    if flip:
+        s = np.fliplr(s)
+    return s
+
 class Step(BaseModel):
     """한 스텝의 경험"""
 
@@ -205,31 +226,43 @@ class TDTrainer(BaseTrainer):
         return 0.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """SARSA: 1스텝 지연, target = ln(r) + γ * Q(s_t, a_t)"""
+        """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습"""
         if len(episode) < 2:
-            return None  # 첫 스텝: 다음 행동의 Q값을 아직 모름
+            return None
 
         prev_step = episode[-2]
         curr_step = episode[-1]
-
-        # SARSA target: ln(r_{t-1}) + γ * Q(s_t, a_t)
         r = self._ln_reward(prev_step.reward)
-        q_next = float(self.model.forward(curr_step.state)[curr_step.action])
-        target = r + self.gamma * q_next
 
-        self.model.forward(prev_step.state)
-        loss = self.model.backward(prev_step.action, target, self.lr)
-        return loss
+        total_loss = 0.0
+        for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+            aug_curr = _augment_board(curr_step.state, rot_k, flip)
+            aug_curr_action = action_map[curr_step.action]
+            q_next = float(self.model.forward(aug_curr)[aug_curr_action])
+            target = r + self.gamma * q_next
+
+            aug_prev = _augment_board(prev_step.state, rot_k, flip)
+            aug_prev_action = action_map[prev_step.action]
+            self.model.forward(aug_prev)
+            total_loss += self.model.backward(aug_prev_action, target, self.lr)
+
+        return total_loss / 8
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습 (다음 행동 없음, target = ln(r))"""
+        """마지막 스텝 학습 (다음 행동 없음), D4 8배 증강"""
         if not episode:
             return []
         last_step = episode[-1]
-        target = self._ln_reward(last_step.reward)
-        self.model.forward(last_step.state)
-        loss = self.model.backward(last_step.action, target, self.lr)
-        return [loss]
+        r = self._ln_reward(last_step.reward)
+
+        total_loss = 0.0
+        for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+            aug_state = _augment_board(last_step.state, rot_k, flip)
+            aug_action = action_map[last_step.action]
+            self.model.forward(aug_state)
+            total_loss += self.model.backward(aug_action, r, self.lr)
+
+        return [total_loss / 8]
 
 
 class MCTrainer(BaseTrainer):
@@ -263,14 +296,16 @@ class MCTrainer(BaseTrainer):
             returns.append(G)
         returns.reverse()
 
-        # 각 스텝 학습
+        # 각 스텝 학습 (D4 대칭 8배 증강)
         losses = []
         for step, target in zip(episode, returns):
-            # 순전파
-            self.model.forward(step.state)
-            # 역전파
-            loss = self.model.backward(step.action, target, self.lr)
-            losses.append(loss)
+            total_loss = 0.0
+            for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+                aug_state = _augment_board(step.state, rot_k, flip)
+                aug_action = action_map[step.action]
+                self.model.forward(aug_state)
+                total_loss += self.model.backward(aug_action, target, self.lr)
+            losses.append(total_loss / 8)
 
         return losses
 
