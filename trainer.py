@@ -6,6 +6,27 @@ from pydantic import BaseModel, ConfigDict
 from game2048 import Game2048
 from model import QNetwork
 
+# D4 대칭군: 4회전 × 2대칭 = 8변환
+# (rot_k, flip, action_map) — action: 0=상, 1=하, 2=좌, 3=우
+BOARD_AUGMENTATIONS = [
+    (0, False, [0, 1, 2, 3]),  # 원본
+    (1, False, [2, 3, 1, 0]),  # 90° 반시계
+    (2, False, [1, 0, 3, 2]),  # 180°
+    (3, False, [3, 2, 0, 1]),  # 270° 반시계
+    (0, True,  [0, 1, 3, 2]),  # 좌우 대칭
+    (1, True,  [3, 2, 1, 0]),  # 90° + 좌우 대칭
+    (2, True,  [1, 0, 2, 3]),  # 180° + 좌우 대칭
+    (3, True,  [2, 3, 0, 1]),  # 270° + 좌우 대칭
+]
+
+
+def _augment_board(state: np.ndarray, rot_k: int, flip: bool) -> np.ndarray:
+    """보드 변환: 회전 + 대칭"""
+    s = np.rot90(state, rot_k)
+    if flip:
+        s = np.fliplr(s)
+    return s
+
 class Step(BaseModel):
     """한 스텝의 경험"""
 
@@ -46,11 +67,11 @@ class TrainConfig(BaseModel):
     """학습 설정"""
 
     method: Literal["td", "mc"] = "td"
-    gamma: float = 0.999999  # TD용 할인율
+    gamma: float = 0.9999  # TD용 할인율
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
-    epsilon_end: float = 0.01
-    epsilon_decay: float = 0.995
+    epsilon_end: float = 0.05
+    epsilon_decay: float = 0.99
     hidden_size: int = 128
 
 
@@ -90,6 +111,10 @@ class BaseTrainer:
             valid_actions = self.env.get_valid_actions()
             action = self.model.get_action(state, valid_actions, self.epsilon)
 
+            # get_action 내부 forward 결과 재사용 (탐험 시에는 캐시 없을 수 있음)
+            cached_q = self.model._cache.get("z3")
+            q_values = cached_q[0] if cached_q is not None else self.model.forward(state)
+
             # 환경 스텝
             next_state, reward, done, info = self.env.step(action)
 
@@ -108,7 +133,7 @@ class BaseTrainer:
             if loss is not None:
                 losses.append(loss)
 
-            # 콜백 호출
+            # 콜백 호출 (forward 재호출 없이 캐시된 q_values 사용)
             if self.on_step_callback:
                 self.on_step_callback(
                     StepInfo(
@@ -117,7 +142,7 @@ class BaseTrainer:
                         action=action,
                         reward=reward,
                         loss=loss,
-                        q_values=self.model.forward(state),
+                        q_values=q_values,
                     )
                 )
 
@@ -151,7 +176,7 @@ class BaseTrainer:
 
         return step_num, self.env.score, losses
 
-    def train(self, episodes: int, print_every: int = 100):
+    def train(self, episodes: int, print_every: int = 500):
         """
         여러 판 학습
 
@@ -174,7 +199,7 @@ class BaseTrainer:
                 print(
                     f"Episode {ep + 1}: avg_score={avg_score:.1f}, "
                     f"max_tile={max_tile}, avg_loss={avg_loss:.4f}, "
-                    f"epsilon={self.epsilon:.3f}"
+                    f"탐험률={self.epsilon:.3f}"
                 )
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
@@ -187,35 +212,67 @@ class BaseTrainer:
 
 
 class TDTrainer(BaseTrainer):
-    """TD (Temporal Difference) 학습기"""
+    """SARSA 학습기: target = ln(r) + γ * Q(s', a')"""
 
     def __init__(self, config: TrainConfig):
         config.method = "td"
         super().__init__(config)
         self.gamma = config.gamma
 
+    def _scale_reward(self, reward: float) -> float:
+        """보상 스케일링: score / 100"""
+        return reward / 100.0
+
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """매 스텝 TD 학습 (1스텝 지연, 실제 다음 보상 사용)"""
+        """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습 (선계산 후 학습)"""
         if len(episode) < 2:
-            return None  # 첫 스텝: 다음 보상을 아직 모름
+            return None
 
-        # 이전 스텝 타겟: r_{t-1} + γ * r_t
         prev_step = episode[-2]
-        target = prev_step.reward + self.gamma * step.reward
+        curr_step = episode[-1]
+        r = self._scale_reward(prev_step.reward)
 
-        self.model.forward(prev_step.state)
-        loss = self.model.backward(prev_step.action, target, self.lr)
-        return loss
+        # 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
+        train_items = []
+        for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+            aug_curr = _augment_board(curr_step.state, rot_k, flip)
+            aug_curr_action = action_map[curr_step.action]
+            q_next = float(self.model.forward(aug_curr)[aug_curr_action])
+            target = r + self.gamma * q_next
+
+            aug_prev = _augment_board(prev_step.state, rot_k, flip)
+            aug_prev_action = action_map[prev_step.action]
+            train_items.append((aug_prev, aug_prev_action, target))
+
+        # 2단계: 고정된 target으로 학습
+        total_loss = 0.0
+        for aug_prev, aug_prev_action, target in train_items:
+            self.model.forward(aug_prev)
+            total_loss += self.model.backward(aug_prev_action, target, self.lr)
+
+        return total_loss / 8
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습 (다음 보상 없음)"""
+        """마지막 스텝 학습 (다음 행동 없음), D4 8배 증강 (선계산 후 학습)"""
         if not episode:
             return []
         last_step = episode[-1]
-        target = last_step.reward
-        self.model.forward(last_step.state)
-        loss = self.model.backward(last_step.action, target, self.lr)
-        return [loss]
+        r = self._scale_reward(last_step.reward)
+
+        # 1단계: 8개 증강 보드/액션 선계산 (target은 r로 고정)
+        train_items = []
+        for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+            aug_state = _augment_board(last_step.state, rot_k, flip)
+            aug_action = action_map[last_step.action]
+            train_items.append((aug_state, aug_action, r))
+
+        # 2단계: 고정된 target으로 학습
+        total_loss = 0.0
+        for aug_state, aug_action, target in train_items:
+            self.model.forward(aug_state)
+            total_loss += self.model.backward(aug_action, target, self.lr)
+
+        return [total_loss / 8]
 
 
 class MCTrainer(BaseTrainer):
@@ -224,6 +281,11 @@ class MCTrainer(BaseTrainer):
     def __init__(self, config: TrainConfig):
         config.method = "mc"
         super().__init__(config)
+        self.gamma = config.gamma
+
+    def _scale_reward(self, reward: float) -> float:
+        """보상 스케일링: score / 100"""
+        return reward / 100.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
@@ -234,21 +296,29 @@ class MCTrainer(BaseTrainer):
         if not episode:
             return []
 
-        # 역순으로 return 계산 (감마=1, 할인 없음)
+        # 역순으로 할인 return 계산: G_t = r_t/512 + γ * G_{t+1}
         returns = []
         G = 0.0
         for step in reversed(episode):
-            G = step.reward + G
-            returns.insert(0, G)
+            G = self._scale_reward(step.reward) + self.gamma * G
+            returns.append(G)
+        returns.reverse()
 
-        # 각 스텝 학습
+        # 각 스텝 학습 (D4 대칭 8배 증강, 선계산 후 학습)
         losses = []
         for step, target in zip(episode, returns):
-            # 순전파
-            self.model.forward(step.state)
-            # 역전파
-            loss = self.model.backward(step.action, target, self.lr)
-            losses.append(loss)
+            # 1단계: 8개 증강 보드/액션 선계산 (target은 고정)
+            train_items = []
+            for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+                aug_state = _augment_board(step.state, rot_k, flip)
+                aug_action = action_map[step.action]
+                train_items.append((aug_state, aug_action, target))
+            # 2단계: 고정된 target으로 학습
+            total_loss = 0.0
+            for aug_state, aug_action, t in train_items:
+                self.model.forward(aug_state)
+                total_loss += self.model.backward(aug_action, t, self.lr)
+            losses.append(total_loss / 8)
 
         return losses
 
@@ -266,9 +336,9 @@ def create_trainer(config: TrainConfig) -> BaseTrainer:
 # 테스트
 if __name__ == "__main__":
     print("=" * 50)
-    print("TD Trainer 테스트 (gamma=0.999999)")
+    print("SARSA Trainer 테스트 (gamma=0.9999)")
     print("=" * 50)
-    td_config = TrainConfig(method="td", gamma=0.999999)
+    td_config = TrainConfig(method="td", gamma=0.9999)
     td_trainer = create_trainer(td_config)
     td_trainer.train(episodes=100, print_every=20)
 

@@ -93,7 +93,7 @@
                     <div class="info-item"><div class="label">최고 타일</div><div class="value" id="infoMaxTile">0</div></div>
                     <div class="info-item"><div class="label">스텝</div><div class="value" id="infoStep">0</div></div>
                     <div class="info-item"><div class="label">보상</div><div class="value" id="infoReward">0</div></div>
-                    <div class="info-item"><div class="label">Epsilon</div><div class="value" id="infoEpsilon">1.000</div></div>
+                    <div class="info-item"><div class="label">탐험률</div><div class="value" id="infoEpsilon">1.000</div></div>
                     <div class="info-item"><div class="label">에피소드</div><div class="value" id="infoEpisode">0</div></div>
                 </div>
                 <div class="q-values">
@@ -123,7 +123,8 @@
             <div class="sep"></div>
             <button id="btnTD">TD 학습</button>
             <button id="btnMC">MC 학습</button>
-            <label>n=<input type="number" id="inputN" value="1" min="1" max="10000"></label>
+            <label>n=<input type="number" id="inputN" value="9999" min="1" max="10000"></label>
+            <label><input type="checkbox" id="chkCurriculum"> 커리큘럼</label>
             <button id="btnStop" class="accent" disabled>중지</button>
         </div>
     </div>
@@ -138,20 +139,40 @@ const ACTION_UP = 0, ACTION_DOWN = 1, ACTION_LEFT = 2, ACTION_RIGHT = 3;
 const ACTION_NAMES = ['↑', '↓', '←', '→'];
 const ROTATION_MAP = { [ACTION_UP]: 1, [ACTION_DOWN]: 3, [ACTION_LEFT]: 0, [ACTION_RIGHT]: 2 };
 
+const CURRICULUM_TILES = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+
 class Game2048 {
-    constructor() {
+    constructor(curriculumMode = false) {
         this.board = null;
         this.score = 0;
         this.done = false;
+        this.curriculumMode = curriculumMode;
     }
 
-    reset() {
+    reset(curriculumMode = null) {
+        const mode = curriculumMode !== null ? curriculumMode : this.curriculumMode;
         this.board = Array.from({ length: 4 }, () => new Array(4).fill(0));
         this.score = 0;
         this.done = false;
-        this._spawnTile();
-        this._spawnTile();
+        if (mode) {
+            this._resetCurriculum();
+        } else {
+            this._spawnTile();
+            this._spawnTile();
+        }
         return this.getState();
+    }
+
+    _resetCurriculum() {
+        // 2^1 ~ 2^10 중 4개 복원추출 → 내림차순 정렬
+        const tiles = [];
+        for (let i = 0; i < 4; i++) {
+            tiles.push(CURRICULUM_TILES[Math.floor(Math.random() * CURRICULUM_TILES.length)]);
+        }
+        tiles.sort((a, b) => b - a);
+        this.board[3] = tiles;
+        // 우상단에 2 고정
+        this.board[0][3] = 2;
     }
 
     getState() {
@@ -173,13 +194,34 @@ class Game2048 {
 
     getValidActions() {
         const valid = [];
-        const saved = this.board.map(r => [...r]);
-        for (let a = 0; a < 4; a++) {
-            this._move(a);
-            if (JSON.stringify(this.board) !== JSON.stringify(saved)) valid.push(a);
-            this.board = saved.map(r => [...r]);
-        }
+        // left=2, right=3, up=0, down=1
+        if (this._canMoveDirection(0)) valid.push(0); // up
+        if (this._canMoveDirection(1)) valid.push(1); // down
+        if (this._canMoveDirection(2)) valid.push(2); // left
+        if (this._canMoveDirection(3)) valid.push(3); // right
         return valid;
+    }
+
+    _canMoveRowLeft(row) {
+        for (let j = 0; j < 4; j++) {
+            if (row[j] === 0) {
+                for (let k = j + 1; k < 4; k++) {
+                    if (row[k] !== 0) return true;
+                }
+            } else if (j + 1 < 4 && row[j] === row[j + 1]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    _canMoveDirection(action) {
+        const k = ROTATION_MAP[action];
+        const rotated = this._rotate(this.board, k);
+        for (let i = 0; i < 4; i++) {
+            if (this._canMoveRowLeft(rotated[i])) return true;
+        }
+        return false;
     }
 
     getMaxTile() {
@@ -259,9 +301,10 @@ class Game2048 {
 // 작업 2: QNetwork JS 포팅
 // ============================================================
 
-const MAX_POWER = 15;
-const GRAD_CLIP = 1.0;
-const LOSS_GRAD_CLIP = 10.0;
+const NUM_CHANNELS = 16;  // 원핫 채널: 0, 2^1, ..., 2^15
+const INPUT_SIZE = 4 * 4 * NUM_CHANNELS;  // 256
+const GRAD_NORM_LIMIT = 1.0;
+const HUBER_DELTA = 1.0;
 
 // --- 행렬 유틸 ---
 function zeros(rows, cols) {
@@ -313,7 +356,7 @@ class QNetwork {
         const h = hiddenSize;
         const xavier = (fanIn) => Math.sqrt(2.0 / fanIn);
 
-        this.w1 = this._randMatrix(16, h, xavier(16));
+        this.w1 = this._randMatrix(INPUT_SIZE, h, xavier(INPUT_SIZE));
         this.b1 = zeros(h);
         this.w2 = this._randMatrix(h, h, xavier(h));
         this.b2 = zeros(h);
@@ -332,12 +375,14 @@ class QNetwork {
     }
 
     _preprocess(board) {
-        // board: 4x4 array → [1][16] normalized
-        const x = [new Float64Array(16)];
+        // board: 4x4 array → [1][256] 원핫 인코딩
+        const x = [new Float64Array(INPUT_SIZE)];
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
-                x[0][i * 4 + j] = v > 0 ? Math.log2(v) / MAX_POWER : 0;
+                const cell = i * 4 + j;
+                const ch = v > 0 ? Math.min(Math.floor(Math.log2(v)), NUM_CHANNELS - 1) : 0;
+                x[0][cell * NUM_CHANNELS + ch] = 1.0;
             }
         return x;
     }
@@ -359,9 +404,16 @@ class QNetwork {
         const qVal = z3[0][action];
         if (isNaN(qVal)) return 0;
 
-        const loss = (qVal - target) ** 2;
-        let dloss = 2 * (qVal - target);
-        dloss = Math.max(-LOSS_GRAD_CLIP, Math.min(LOSS_GRAD_CLIP, dloss));
+        const error = qVal - target;
+        const absError = Math.abs(error);
+        let loss, dloss;
+        if (absError <= HUBER_DELTA) {
+            loss = 0.5 * error * error;
+            dloss = error;
+        } else {
+            loss = HUBER_DELTA * (absError - 0.5 * HUBER_DELTA);
+            dloss = HUBER_DELTA * Math.sign(error);
+        }
 
         // dz3: [1][4]
         const dz3 = [new Float64Array(4)];
@@ -391,12 +443,42 @@ class QNetwork {
         return loss;
     }
 
+    _clipNorm(g) {
+        // g: 2D array or 1D Float64Array → norm clip
+        let sumSq = 0;
+        if (g[0] instanceof Float64Array || Array.isArray(g[0])) {
+            for (let i = 0; i < g.length; i++)
+                for (let j = 0; j < g[0].length; j++)
+                    sumSq += g[i][j] * g[i][j];
+        } else {
+            for (let j = 0; j < g.length; j++)
+                sumSq += g[j] * g[j];
+        }
+        const norm = Math.sqrt(sumSq);
+        if (norm <= GRAD_NORM_LIMIT) return g;
+        const scale = GRAD_NORM_LIMIT / norm;
+        if (g[0] instanceof Float64Array || Array.isArray(g[0])) {
+            const c = Array.from({ length: g.length }, () => new Float64Array(g[0].length));
+            for (let i = 0; i < g.length; i++)
+                for (let j = 0; j < g[0].length; j++)
+                    c[i][j] = g[i][j] * scale;
+            return c;
+        } else {
+            const c = new Float64Array(g.length);
+            for (let j = 0; j < g.length; j++)
+                c[j] = g[j] * scale;
+            return c;
+        }
+    }
+
     _updateWeights(w, dw, b, db, lr) {
+        dw = this._clipNorm(dw);
+        db = this._clipNorm(db);
         for (let i = 0; i < w.length; i++)
             for (let j = 0; j < w[0].length; j++)
-                w[i][j] -= lr * Math.max(-GRAD_CLIP, Math.min(GRAD_CLIP, dw[i][j]));
+                w[i][j] -= lr * dw[i][j];
         for (let j = 0; j < b.length; j++)
-            b[j] -= lr * Math.max(-GRAD_CLIP, Math.min(GRAD_CLIP, db[j]));
+            b[j] -= lr * db[j];
     }
 
     getAction(board, validActions, epsilon = 0) {
@@ -438,12 +520,44 @@ class QNetwork {
 // ============================================================
 
 const DEFAULT_CONFIG = {
-    gamma: 0.999999,
+    gamma: 0.9999,
     learningRate: 0.001,
     epsilonStart: 1.0,
-    epsilonEnd: 0.01,
-    epsilonDecay: 0.995,
+    epsilonEnd: 0.05,
+    epsilonDecay: 0.99,
 };
+
+function scaleReward(reward) {
+    return reward / 100.0;
+}
+
+// D4 대칭 그룹: [rot_k, flip, actionMap]
+const BOARD_AUGMENTATIONS = [
+    [0, false, [0, 1, 2, 3]],  // 원본
+    [1, false, [2, 3, 1, 0]],  // 90° 반시계
+    [2, false, [1, 0, 3, 2]],  // 180°
+    [3, false, [3, 2, 0, 1]],  // 270° 반시계
+    [0, true,  [0, 1, 3, 2]],  // 좌우 대칭
+    [1, true,  [3, 2, 1, 0]],  // 90° + 좌우 대칭
+    [2, true,  [1, 0, 2, 3]],  // 180° + 좌우 대칭
+    [3, true,  [2, 3, 0, 1]],  // 270° + 좌우 대칭
+];
+
+function augmentBoard(board, rotK, flip) {
+    let b = board.map(r => [...r]);
+    for (let t = 0; t < rotK; t++) {
+        const n = b.length;
+        const rot = Array.from({ length: n }, () => new Array(n).fill(0));
+        for (let x = 0; x < n; x++)
+            for (let y = 0; y < n; y++)
+                rot[n - 1 - y][x] = b[x][y];  // 반시계 (np.rot90 일치)
+        b = rot;
+    }
+    if (flip) {
+        for (let i = 0; i < b.length; i++) b[i].reverse();
+    }
+    return b;
+}
 
 class TDTrainer {
     constructor(model, config = {}) {
@@ -451,7 +565,7 @@ class TDTrainer {
         this.cfg = { ...DEFAULT_CONFIG, ...config };
         this.epsilon = this.cfg.epsilonStart;
         this.episodeCount = 0;
-        this.onStep = null;   // callback(info)
+        this.onStep = null;
         this.aborted = false;
     }
 
@@ -471,19 +585,34 @@ class TDTrainer {
         const losses = [];
         let state = env.reset();
         let stepNum = 0;
-        let prevStep = null; // 1스텝 지연 학습용
+        let prevStep = null;
 
         while (!env.done && !this.aborted) {
             const validActions = env.getValidActions();
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            // 이전 스텝 학습: target = r_{t-1} + γ * r_t
+            // SARSA: 이전 스텝 학습 — target = ln(r) + γ * Q(s', a')
             if (prevStep) {
-                const target = prevStep.reward + this.cfg.gamma * reward;
-                this.model.forward(prevStep.state);
-                const loss = this.model.backward(prevStep.action, target, this.cfg.learningRate);
-                losses.push(loss);
+                const r = scaleReward(prevStep.reward);
+                // 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
+                const trainItems = [];
+                for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                    const augCurr = augmentBoard(state, rotK, flip);
+                    const augCurrAction = actionMap[action];
+                    const qNext = this.model.forward(augCurr)[augCurrAction];
+                    const target = r + this.cfg.gamma * qNext;
+                    const augPrev = augmentBoard(prevStep.state, rotK, flip);
+                    const augPrevAction = actionMap[prevStep.action];
+                    trainItems.push({ state: augPrev, action: augPrevAction, target });
+                }
+                // 2단계: 고정된 target으로 학습
+                let totalLoss = 0;
+                for (const item of trainItems) {
+                    this.model.forward(item.state);
+                    totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+                }
+                losses.push(totalLoss / 8);
             }
 
             const qValues = this.model.forward(state);
@@ -496,12 +625,25 @@ class TDTrainer {
             if (stepNum % 5 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        // 마지막 스텝 학습: target = r_T (다음 보상 없음)
+        // 게임오버 보드 표시
+        if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
+        await new Promise(r => setTimeout(r, 0));
+
+        // 마지막 스텝: target = r/512 — 고정값이므로 선계산 불필요
         if (prevStep) {
-            const target = prevStep.reward;
-            this.model.forward(prevStep.state);
-            const loss = this.model.backward(prevStep.action, target, this.cfg.learningRate);
-            losses.push(loss);
+            const r = scaleReward(prevStep.reward);
+            const trainItems = [];
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augPrev = augmentBoard(prevStep.state, rotK, flip);
+                const augPrevAction = actionMap[prevStep.action];
+                trainItems.push({ state: augPrev, action: augPrevAction, target: r });
+            }
+            let totalLoss = 0;
+            for (const item of trainItems) {
+                this.model.forward(item.state);
+                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+            }
+            losses.push(totalLoss / 8);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
@@ -550,23 +692,38 @@ class MCTrainer {
             if (stepNum % 10 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        // 중단된 경우 수집된 데이터로 학습하지 않음
+        // 게임오버 보드 표시
+        if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
+        await new Promise(r => setTimeout(r, 0));
+
+        // 중단된 경우 학습하지 않음
         if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
 
-        // Return 계산 (역순)
+        // Return 계산 (역순) — ln(reward) + gamma 할인
         const returns = new Array(episode.length);
         let G = 0;
         for (let i = episode.length - 1; i >= 0; i--) {
-            G += episode[i].reward;
+            G = scaleReward(episode[i].reward) + this.cfg.gamma * G;
             returns[i] = G;
         }
 
-        // 각 스텝 학습
+        // 각 스텝 학습 — D4 8x 증강 (선계산 후 학습)
         const losses = [];
         for (let i = 0; i < episode.length; i++) {
-            this.model.forward(episode[i].state);
-            const loss = this.model.backward(episode[i].action, returns[i], this.cfg.learningRate);
-            losses.push(loss);
+            // 1단계: 8개 증강 보드/액션 선계산 (target은 returns[i]로 고정)
+            const trainItems = [];
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augState = augmentBoard(episode[i].state, rotK, flip);
+                const augAction = actionMap[episode[i].action];
+                trainItems.push({ state: augState, action: augAction, target: returns[i] });
+            }
+            // 2단계: 고정된 target으로 학습
+            let totalLoss = 0;
+            for (const item of trainItems) {
+                this.model.forward(item.state);
+                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+            }
+            losses.push(totalLoss / 8);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
@@ -617,7 +774,7 @@ function updateQBars(qValues, bestAction) {
         const val = row.querySelector('.q-bar-val');
         const pct = Math.abs(qValues[a]) / maxAbs * 100;
         fill.style.width = pct + '%';
-        val.textContent = qValues[a].toFixed(3);
+        val.textContent = qValues[a].toFixed(4);
         row.className = 'q-bar-row ' + (a === bestAction ? 'q-best' : 'q-normal');
     }
 }
@@ -670,15 +827,15 @@ function drawNetwork() {
                 if (count === 0) continue;
                 const avg = sum / count;
                 const absAvg = Math.abs(avg);
-                const thickness = Math.min(3, absAvg * 2);
+                const thickness = Math.min(3, absAvg * 8);
                 if (thickness < 0.1) continue;
 
                 ctx.beginPath();
                 ctx.moveTo(layerX[li], nodeY(li, si));
                 ctx.lineTo(layerX[li + 1], nodeY(li + 1, di));
                 ctx.strokeStyle = avg > 0
-                    ? `rgba(59, 130, 246, ${Math.min(0.6, absAvg)})`   // 파랑
-                    : `rgba(239, 68, 68, ${Math.min(0.6, absAvg)})`;    // 빨강
+                    ? `rgba(59, 130, 246, ${Math.min(0.8, absAvg * 4)})`   // 파랑
+                    : `rgba(239, 68, 68, ${Math.min(0.8, absAvg * 4)})`;    // 빨강
                 ctx.lineWidth = thickness;
                 ctx.stroke();
             }
@@ -796,14 +953,15 @@ document.getElementById('btnTD').addEventListener('click', async () => {
     if (running) return;
     setRunning(true);
     const n = parseInt(document.getElementById('inputN').value) || 1;
-    setStatus(`TD 학습 중... (0/${n})`);
-    env = new Game2048();
+    const curriculum = document.getElementById('chkCurriculum').checked;
+    setStatus(`TD 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
+    env = new Game2048(curriculum);
     const trainer = new TDTrainer(model);
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
-        setStatus(`TD 학습 중... (${result.episode}/${n})`);
+        setStatus(`TD 학습 중... (${result.episode}/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     });
     const msg = trainer.aborted ? `TD 학습 중단 · ${trainer.episodeCount}게임` : `TD 학습 완료 · ${n}게임`;
     setStatus(msg);
@@ -815,14 +973,15 @@ document.getElementById('btnMC').addEventListener('click', async () => {
     if (running) return;
     setRunning(true);
     const n = parseInt(document.getElementById('inputN').value) || 1;
-    setStatus(`MC 학습 중... (0/${n})`);
-    env = new Game2048();
+    const curriculum = document.getElementById('chkCurriculum').checked;
+    setStatus(`MC 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
+    env = new Game2048(curriculum);
     const trainer = new MCTrainer(model);
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
-        setStatus(`MC 학습 중... (${result.episode}/${n})`);
+        setStatus(`MC 학습 중... (${result.episode}/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     });
     const msg = trainer.aborted ? `MC 학습 중단 · ${trainer.episodeCount}게임` : `MC 학습 완료 · ${n}게임`;
     setStatus(msg);
