@@ -301,8 +301,8 @@ class Game2048 {
 // 작업 2: QNetwork JS 포팅
 // ============================================================
 
-const NUM_CHANNELS = 16;  // 원핫 채널: 0, 2^1, ..., 2^15
-const INPUT_SIZE = 4 * 4 * NUM_CHANNELS;  // 256
+const MAX_EXPONENT = 16;  // 정규화 분모: log2(v) / MAX_EXPONENT
+const INPUT_SIZE = 4 * 4;  // 16 (셀당 1개 실수값)
 const GRAD_NORM_LIMIT = 1.0;
 const HUBER_DELTA = 1.0;
 
@@ -375,14 +375,13 @@ class QNetwork {
     }
 
     _preprocess(board) {
-        // board: 4x4 array → [1][256] 원핫 인코딩
+        // board: 4x4 array → [1][16] 정규화 지수 인코딩
         const x = [new Float64Array(INPUT_SIZE)];
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
                 const cell = i * 4 + j;
-                const ch = v > 0 ? Math.min(Math.floor(Math.log2(v)), NUM_CHANNELS - 1) : 0;
-                x[0][cell * NUM_CHANNELS + ch] = 1.0;
+                x[0][cell] = v > 0 ? Math.log2(v) / MAX_EXPONENT : 0.0;
             }
         return x;
     }
