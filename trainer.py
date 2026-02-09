@@ -49,8 +49,8 @@ class TrainConfig(BaseModel):
     gamma: float = 0.9999  # TD용 할인율
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
-    epsilon_end: float = 0.01
-    epsilon_decay: float = 0.995
+    epsilon_end: float = 0.05
+    epsilon_decay: float = 0.999
     hidden_size: int = 128
 
 
@@ -178,7 +178,7 @@ class BaseTrainer:
                 print(
                     f"Episode {ep + 1}: avg_score={avg_score:.1f}, "
                     f"max_tile={max_tile}, avg_loss={avg_loss:.4f}, "
-                    f"epsilon={self.epsilon:.3f}"
+                    f"탐험률={self.epsilon:.3f}"
                 )
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
