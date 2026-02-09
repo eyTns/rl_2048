@@ -152,9 +152,9 @@ class TestTrainingMetrics:
         metrics = TrainingMetrics()
 
         class FakeModel:
-            w1 = np.ones((16, 128))
-            w2 = np.ones((128, 128))
-            w3 = np.ones((128, 4))
+            w1 = np.ones((16, 256))
+            w2 = np.ones((256, 256))
+            w3 = np.ones((256, 4))
 
         result = EpisodeResult(
             episode_num=1, steps=5, score=100.0, max_tile=64, losses=[0.1], epsilon=0.9

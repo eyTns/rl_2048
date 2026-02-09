@@ -72,7 +72,7 @@ class TrainConfig(BaseModel):
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
     epsilon_decay: float = 0.99
-    hidden_size: int = 128
+    hidden_size: int = 256
 
 
 class BaseTrainer:
@@ -220,11 +220,11 @@ class TDTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
-        """보상 스케일링: score / 100"""
-        return reward / 100.0
+        """보상 스케일링: √reward"""
+        return float(np.sqrt(reward))
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습 (선계산 후 학습)"""
+        """SARSA: 1스텝 지연 학습"""
         if len(episode) < 2:
             return None
 
@@ -232,47 +232,51 @@ class TDTrainer(BaseTrainer):
         curr_step = episode[-1]
         r = self._scale_reward(prev_step.reward)
 
-        # 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
-        train_items = []
-        for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
-            aug_curr = _augment_board(curr_step.state, rot_k, flip)
-            aug_curr_action = action_map[curr_step.action]
-            q_next = float(self.model.forward(aug_curr)[aug_curr_action])
-            target = r + self.gamma * q_next
+        # D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
+        # train_items = []
+        # for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+        #     aug_curr = _augment_board(curr_step.state, rot_k, flip)
+        #     aug_curr_action = action_map[curr_step.action]
+        #     q_next = float(self.model.forward(aug_curr)[aug_curr_action])
+        #     target = r + self.gamma * q_next
+        #
+        #     aug_prev = _augment_board(prev_step.state, rot_k, flip)
+        #     aug_prev_action = action_map[prev_step.action]
+        #     train_items.append((aug_prev, aug_prev_action, target))
 
-            aug_prev = _augment_board(prev_step.state, rot_k, flip)
-            aug_prev_action = action_map[prev_step.action]
-            train_items.append((aug_prev, aug_prev_action, target))
+        # 원본만 사용
+        q_next = float(self.model.forward(curr_step.state)[curr_step.action])
+        target = r + self.gamma * q_next
 
-        # 2단계: 고정된 target으로 학습
-        total_loss = 0.0
-        for aug_prev, aug_prev_action, target in train_items:
-            self.model.forward(aug_prev)
-            total_loss += self.model.backward(aug_prev_action, target, self.lr)
+        self.model.forward(prev_step.state)
+        total_loss = self.model.backward(prev_step.action, target, self.lr)
 
-        return total_loss / 8
+        return total_loss
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습 (다음 행동 없음), D4 8배 증강 (선계산 후 학습)"""
+        """마지막 스텝 학습 (다음 행동 없음)"""
         if not episode:
             return []
         last_step = episode[-1]
         r = self._scale_reward(last_step.reward)
 
-        # 1단계: 8개 증강 보드/액션 선계산 (target은 r로 고정)
-        train_items = []
-        for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
-            aug_state = _augment_board(last_step.state, rot_k, flip)
-            aug_action = action_map[last_step.action]
-            train_items.append((aug_state, aug_action, r))
+        # D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
+        # train_items = []
+        # for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+        #     aug_state = _augment_board(last_step.state, rot_k, flip)
+        #     aug_action = action_map[last_step.action]
+        #     train_items.append((aug_state, aug_action, r))
+        #
+        # total_loss = 0.0
+        # for aug_state, aug_action, target in train_items:
+        #     self.model.forward(aug_state)
+        #     total_loss += self.model.backward(aug_action, target, self.lr)
 
-        # 2단계: 고정된 target으로 학습
-        total_loss = 0.0
-        for aug_state, aug_action, target in train_items:
-            self.model.forward(aug_state)
-            total_loss += self.model.backward(aug_action, target, self.lr)
+        # 원본만 사용
+        self.model.forward(last_step.state)
+        total_loss = self.model.backward(last_step.action, r, self.lr)
 
-        return [total_loss / 8]
+        return [total_loss]
 
 
 class MCTrainer(BaseTrainer):
@@ -284,8 +288,8 @@ class MCTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
-        """보상 스케일링: score / 100"""
-        return reward / 100.0
+        """보상 스케일링: √reward"""
+        return float(np.sqrt(reward))
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
@@ -296,7 +300,7 @@ class MCTrainer(BaseTrainer):
         if not episode:
             return []
 
-        # 역순으로 할인 return 계산: G_t = r_t/512 + γ * G_{t+1}
+        # 역순으로 할인 return 계산: G_t = √r_t + γ * G_{t+1}
         returns = []
         G = 0.0
         for step in reversed(episode):
@@ -304,21 +308,25 @@ class MCTrainer(BaseTrainer):
             returns.append(G)
         returns.reverse()
 
-        # 각 스텝 학습 (D4 대칭 8배 증강, 선계산 후 학습)
+        # 각 스텝 학습
         losses = []
         for step, target in zip(episode, returns):
-            # 1단계: 8개 증강 보드/액션 선계산 (target은 고정)
-            train_items = []
-            for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
-                aug_state = _augment_board(step.state, rot_k, flip)
-                aug_action = action_map[step.action]
-                train_items.append((aug_state, aug_action, target))
-            # 2단계: 고정된 target으로 학습
-            total_loss = 0.0
-            for aug_state, aug_action, t in train_items:
-                self.model.forward(aug_state)
-                total_loss += self.model.backward(aug_action, t, self.lr)
-            losses.append(total_loss / 8)
+            # D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
+            # train_items = []
+            # for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
+            #     aug_state = _augment_board(step.state, rot_k, flip)
+            #     aug_action = action_map[step.action]
+            #     train_items.append((aug_state, aug_action, target))
+            # total_loss = 0.0
+            # for aug_state, aug_action, t in train_items:
+            #     self.model.forward(aug_state)
+            #     total_loss += self.model.backward(aug_action, t, self.lr)
+            # losses.append(total_loss / 8)
+
+            # 원본만 사용
+            self.model.forward(step.state)
+            loss = self.model.backward(step.action, target, self.lr)
+            losses.append(loss)
 
         return losses
 

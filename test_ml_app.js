@@ -36,7 +36,7 @@ const testCode = `
 
     console.log('');
     console.log('=== QNetwork ===');
-    const net = new QNetwork(128);
+    const net = new QNetwork(256);
     const q = net.forward(g.getState());
     console.log('  forward: ' + q.map(v=>v.toFixed(4)).join(', '));
     net.forward(g.getState());
