@@ -284,7 +284,7 @@ class Game2048 {
             const rot = Array.from({ length: n }, () => new Array(n).fill(0));
             for (let x = 0; x < n; x++)
                 for (let y = 0; y < n; y++)
-                    rot[y][n - 1 - x] = r[x][y];
+                    rot[n - 1 - y][x] = r[x][y];  // 반시계 (np.rot90 일치)
             r = rot;
         }
         return r;
