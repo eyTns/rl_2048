@@ -219,11 +219,9 @@ class TDTrainer(BaseTrainer):
         super().__init__(config)
         self.gamma = config.gamma
 
-    def _ln_reward(self, reward: float) -> float:
-        """보상 변환: ln(합쳐진 타일값)"""
-        if reward > 0:
-            return float(np.log(reward))
-        return 0.0
+    def _scale_reward(self, reward: float) -> float:
+        """보상 스케일링: score / 512"""
+        return reward / 512.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습 (선계산 후 학습)"""
@@ -232,7 +230,7 @@ class TDTrainer(BaseTrainer):
 
         prev_step = episode[-2]
         curr_step = episode[-1]
-        r = self._ln_reward(prev_step.reward)
+        r = self._scale_reward(prev_step.reward)
 
         # 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
         train_items = []
@@ -259,7 +257,7 @@ class TDTrainer(BaseTrainer):
         if not episode:
             return []
         last_step = episode[-1]
-        r = self._ln_reward(last_step.reward)
+        r = self._scale_reward(last_step.reward)
 
         # 1단계: 8개 증강 보드/액션 선계산 (target은 r로 고정)
         train_items = []
@@ -285,11 +283,9 @@ class MCTrainer(BaseTrainer):
         super().__init__(config)
         self.gamma = config.gamma
 
-    def _ln_reward(self, reward: float) -> float:
-        """보상 변환: ln(합쳐진 타일값)"""
-        if reward > 0:
-            return float(np.log(reward))
-        return 0.0
+    def _scale_reward(self, reward: float) -> float:
+        """보상 스케일링: score / 512"""
+        return reward / 512.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
@@ -300,11 +296,11 @@ class MCTrainer(BaseTrainer):
         if not episode:
             return []
 
-        # 역순으로 할인 return 계산: G_t = ln(r_t) + γ * G_{t+1}
+        # 역순으로 할인 return 계산: G_t = r_t/512 + γ * G_{t+1}
         returns = []
         G = 0.0
         for step in reversed(episode):
-            G = self._ln_reward(step.reward) + self.gamma * G
+            G = self._scale_reward(step.reward) + self.gamma * G
             returns.append(G)
         returns.reverse()
 
