@@ -870,9 +870,7 @@ function onStepUI(info) {
     renderBoard(info.state);
     updateInfo({ score: info.score, maxTile: info.maxTile, step: info.stepNum, reward: info.reward });
     if (info.qValues) {
-        let bestA = 0, bestQ = -Infinity;
-        for (let a = 0; a < 4; a++) if (info.qValues[a] > bestQ) { bestQ = info.qValues[a]; bestA = a; }
-        updateQBars(info.qValues, bestA);
+        updateQBars(info.qValues, info.action);
     }
 }
 
