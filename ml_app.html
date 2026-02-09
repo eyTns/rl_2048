@@ -625,6 +625,14 @@ class TDTrainer {
                 losses.push(this.model.backward(prevStep.action, target, this.cfg.learningRate));
             }
 
+            // 갈 수 없는 방향: target = -10
+            for (let a = 0; a < 4; a++) {
+                if (!validActions.includes(a)) {
+                    this.model.forward(state);
+                    this.model.backward(a, -10, this.cfg.learningRate);
+                }
+            }
+
             const qValues = this.model.forward(state);
             if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
 
@@ -682,7 +690,7 @@ class MCTrainer {
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
             const qValues = this.model.forward(state);
-            episode.push({ state: state.map(r => [...r]), action, reward, done, qValues });
+            episode.push({ state: state.map(r => [...r]), action, reward, done, qValues, validActions });
 
             if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
 
@@ -731,6 +739,14 @@ class MCTrainer {
             // 원본만 사용
             this.model.forward(episode[i].state);
             losses.push(this.model.backward(episode[i].action, returns[i], this.cfg.learningRate));
+
+            // 갈 수 없는 방향: target = -10
+            for (let a = 0; a < 4; a++) {
+                if (!episode[i].validActions.includes(a)) {
+                    this.model.forward(episode[i].state);
+                    this.model.backward(a, -10, this.cfg.learningRate);
+                }
+            }
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
