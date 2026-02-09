@@ -528,7 +528,7 @@ const DEFAULT_CONFIG = {
 };
 
 function scaleReward(reward) {
-    return reward / 100.0;
+    return Math.sqrt(reward);
 }
 
 // D4 대칭 그룹: [rot_k, flip, actionMap]
@@ -592,7 +592,7 @@ class TDTrainer {
             const action = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            // SARSA: 이전 스텝 학습 — target = r/100 + γ * Q(s', a')
+            // SARSA: 이전 스텝 학습 — target = √r + γ * Q(s', a')
             if (prevStep) {
                 const r = scaleReward(prevStep.reward);
                 // D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
@@ -634,7 +634,7 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // 마지막 스텝: target = r/100
+        // 마지막 스텝: target = √r
         if (prevStep) {
             const r = scaleReward(prevStep.reward);
             // D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
@@ -709,7 +709,7 @@ class MCTrainer {
         // 중단된 경우 학습하지 않음
         if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
 
-        // Return 계산 (역순) — ln(reward) + gamma 할인
+        // Return 계산 (역순) — √reward + gamma 할인
         const returns = new Array(episode.length);
         let G = 0;
         for (let i = episode.length - 1; i >= 0; i--) {

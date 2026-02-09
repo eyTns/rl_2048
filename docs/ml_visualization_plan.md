@@ -167,7 +167,7 @@ QNetwork {
 ### 작업 3: Trainer JS 포팅
 
 `trainer.py`의 TD(SARSA)/MC 트레이너를 JavaScript로 포팅합니다.
-보상 스케일링(score/100), D4 대칭 증강(8배), bootstrap explosion 방지를 포함합니다.
+보상 스케일링(√score), D4 대칭 증강(8배), bootstrap explosion 방지를 포함합니다.
 
 ```
 TDTrainer {  // SARSA

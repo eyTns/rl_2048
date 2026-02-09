@@ -220,8 +220,8 @@ class TDTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
-        """보상 스케일링: score / 100"""
-        return reward / 100.0
+        """보상 스케일링: √reward"""
+        return float(np.sqrt(reward))
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """SARSA: 1스텝 지연 학습"""
@@ -288,8 +288,8 @@ class MCTrainer(BaseTrainer):
         self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
-        """보상 스케일링: score / 100"""
-        return reward / 100.0
+        """보상 스케일링: √reward"""
+        return float(np.sqrt(reward))
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
         """MC는 스텝에서 학습하지 않음"""
@@ -300,7 +300,7 @@ class MCTrainer(BaseTrainer):
         if not episode:
             return []
 
-        # 역순으로 할인 return 계산: G_t = r_t/512 + γ * G_{t+1}
+        # 역순으로 할인 return 계산: G_t = √r_t + γ * G_{t+1}
         returns = []
         G = 0.0
         for step in reversed(episode):
