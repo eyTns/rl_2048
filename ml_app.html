@@ -634,7 +634,7 @@ class TDTrainer {
             }
 
             const qValues = this.model.forward(state);
-            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
 
             prevStep = { state: state.map(r => [...r]), action, reward };
             state = nextState;
@@ -692,7 +692,7 @@ class MCTrainer {
             const qValues = this.model.forward(state);
             episode.push({ state: state.map(r => [...r]), action, reward, done, qValues, validActions });
 
-            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, done, score: env.score, maxTile: env.getMaxTile() });
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
 
             state = nextState;
             stepNum++;
@@ -889,7 +889,13 @@ function onStepUI(info) {
     renderBoard(info.state);
     updateInfo({ score: info.score, maxTile: info.maxTile, step: info.stepNum, reward: info.reward });
     if (info.qValues) {
-        updateQBars(info.qValues, info.action);
+        const displayQ = [...info.qValues];
+        if (info.validActions) {
+            for (let a = 0; a < 4; a++) {
+                if (!info.validActions.includes(a)) displayQ[a] = -10;
+            }
+        }
+        updateQBars(displayQ, info.action);
     }
 }
 
@@ -973,7 +979,7 @@ document.getElementById('btnPlay').addEventListener('click', async () => {
         const action = model.getAction(env.getState(), validActions, 0);
         const qValues = model.forward(env.getState());
         const { reward } = env.step(action);
-        onStepUI({ stepNum: step, state: env.getState(), action, reward, qValues, done: env.done, score: env.score, maxTile: env.getMaxTile() });
+        onStepUI({ stepNum: step, state: env.getState(), action, reward, qValues, validActions, done: env.done, score: env.score, maxTile: env.getMaxTile() });
         step++;
         await new Promise(r => setTimeout(r, 50));
     }
@@ -1004,7 +1010,7 @@ document.getElementById('btnStep').addEventListener('click', () => {
     const qValues = model.forward(env.getState());
     const { reward } = env.step(action);
     stepCount++;
-    onStepUI({ stepNum: stepCount, state: env.getState(), action, reward, qValues, done: env.done, score: env.score, maxTile: env.getMaxTile() });
+    onStepUI({ stepNum: stepCount, state: env.getState(), action, reward, qValues, validActions, done: env.done, score: env.score, maxTile: env.getMaxTile() });
     if (env.done) {
         setStatus(`게임 종료 · 점수 ${env.score} · 최고 타일 ${env.getMaxTile()}`);
     } else {
