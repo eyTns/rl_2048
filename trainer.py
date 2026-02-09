@@ -67,7 +67,9 @@ class TrainConfig(BaseModel):
     """학습 설정"""
 
     method: Literal["td", "mc"] = "td"
-    gamma: float = 0.9999  # TD용 할인율
+    gamma: float = 0.9  # 초기 감마 (adaptive_gamma=False면 고정값)
+    adaptive_gamma: bool = True  # 적응형 감마: 0.1^(1/max_steps)
+    gamma_target: float = 0.1  # γ^max_steps = 이 값
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
@@ -84,6 +86,10 @@ class BaseTrainer:
         self.model = QNetwork(hidden_size=config.hidden_size)
         self.lr = config.learning_rate
         self.epsilon = config.epsilon_start
+        self.gamma = config.gamma
+
+        # 적응형 감마용 최대 스텝 추적
+        self.max_episode_steps = 0
 
         # 통계
         self.episode_count = 0
@@ -155,6 +161,11 @@ class BaseTrainer:
         if episode_losses:
             losses.extend(episode_losses)
 
+        # 적응형 감마 업데이트: γ = target^(1/max_steps)
+        if self.config.adaptive_gamma and step_num > self.max_episode_steps:
+            self.max_episode_steps = step_num
+            self.gamma = self.config.gamma_target ** (1.0 / self.max_episode_steps)
+
         # epsilon 감소
         self.epsilon = max(
             self.config.epsilon_end, self.epsilon * self.config.epsilon_decay
@@ -199,7 +210,7 @@ class BaseTrainer:
                 print(
                     f"Episode {ep + 1}: avg_score={avg_score:.1f}, "
                     f"max_tile={max_tile}, avg_loss={avg_loss:.4f}, "
-                    f"탐험률={self.epsilon:.3f}"
+                    f"탐험률={self.epsilon:.3f}, γ={self.gamma:.6f}"
                 )
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
@@ -212,12 +223,11 @@ class BaseTrainer:
 
 
 class TDTrainer(BaseTrainer):
-    """SARSA 학습기: target = ln(r) + γ * Q(s', a')"""
+    """SARSA 학습기: target = √r + γ * Q(s', a')"""
 
     def __init__(self, config: TrainConfig):
         config.method = "td"
         super().__init__(config)
-        self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
         """보상 스케일링: √reward"""
@@ -285,7 +295,6 @@ class MCTrainer(BaseTrainer):
     def __init__(self, config: TrainConfig):
         config.method = "mc"
         super().__init__(config)
-        self.gamma = config.gamma
 
     def _scale_reward(self, reward: float) -> float:
         """보상 스케일링: √reward"""
@@ -344,14 +353,14 @@ def create_trainer(config: TrainConfig) -> BaseTrainer:
 # 테스트
 if __name__ == "__main__":
     print("=" * 50)
-    print("SARSA Trainer 테스트 (gamma=0.9999)")
+    print("SARSA Trainer 테스트 (적응형 감마)")
     print("=" * 50)
-    td_config = TrainConfig(method="td", gamma=0.9999)
+    td_config = TrainConfig(method="td")
     td_trainer = create_trainer(td_config)
     td_trainer.train(episodes=100, print_every=20)
 
     print("\n" + "=" * 50)
-    print("MC Trainer 테스트")
+    print("MC Trainer 테스트 (적응형 감마)")
     print("=" * 50)
     mc_config = TrainConfig(method="mc")
     mc_trainer = create_trainer(mc_config)
