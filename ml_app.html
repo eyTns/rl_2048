@@ -625,11 +625,11 @@ class TDTrainer {
                 losses.push(this.model.backward(prevStep.action, target, this.cfg.learningRate));
             }
 
-            // 갈 수 없는 방향: target = -10
+            // 갈 수 없는 방향: target = 0
             for (let a = 0; a < 4; a++) {
                 if (!validActions.includes(a)) {
                     this.model.forward(state);
-                    this.model.backward(a, -10, this.cfg.learningRate);
+                    this.model.backward(a, 0, this.cfg.learningRate);
                 }
             }
 
@@ -740,11 +740,11 @@ class MCTrainer {
             this.model.forward(episode[i].state);
             losses.push(this.model.backward(episode[i].action, returns[i], this.cfg.learningRate));
 
-            // 갈 수 없는 방향: target = -10
+            // 갈 수 없는 방향: target = 0
             for (let a = 0; a < 4; a++) {
                 if (!episode[i].validActions.includes(a)) {
                     this.model.forward(episode[i].state);
-                    this.model.backward(a, -10, this.cfg.learningRate);
+                    this.model.backward(a, 0, this.cfg.learningRate);
                 }
             }
         }
@@ -892,7 +892,7 @@ function onStepUI(info) {
         const displayQ = [...info.qValues];
         if (info.validActions) {
             for (let a = 0; a < 4; a++) {
-                if (!info.validActions.includes(a)) displayQ[a] = -10;
+                if (!info.validActions.includes(a)) displayQ[a] = 0;
             }
         }
         updateQBars(displayQ, info.action);

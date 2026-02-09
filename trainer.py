@@ -133,11 +133,11 @@ class BaseTrainer:
             if loss is not None:
                 losses.append(loss)
 
-            # 갈 수 없는 방향: target = -10
+            # 갈 수 없는 방향: target = 0
             for a in range(4):
                 if a not in valid_actions:
                     self.model.forward(state)
-                    self.model.backward(a, -10.0, self.lr)
+                    self.model.backward(a, 0.0, self.lr)
 
             # 콜백 호출 (forward 재호출 없이 캐시된 q_values 사용)
             if self.on_step_callback:
