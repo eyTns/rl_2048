@@ -1,6 +1,7 @@
 import numpy as np
 
-MAX_POWER = 15  # log2(32768), 최대 타일 지수
+NUM_CHANNELS = 16  # 원핫 채널 수: 0, 2^1, 2^2, ..., 2^15
+INPUT_SIZE = 4 * 4 * NUM_CHANNELS  # 256
 GRAD_NORM_LIMIT = 1.0
 HUBER_DELTA = 1.0
 
@@ -12,7 +13,7 @@ class QNetwork:
         self.hidden_size = hidden_size
 
         # Xavier 초기화
-        self.w1 = np.random.randn(16, hidden_size) * np.sqrt(2.0 / 16)
+        self.w1 = np.random.randn(INPUT_SIZE, hidden_size) * np.sqrt(2.0 / INPUT_SIZE)
         self.b1 = np.zeros(hidden_size)
         self.w2 = np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / hidden_size)
         self.b2 = np.zeros(hidden_size)
@@ -23,12 +24,21 @@ class QNetwork:
         self._cache = {}
 
     def _preprocess(self, x: np.ndarray) -> np.ndarray:
-        """보드 전처리: log2 스케일 정규화"""
-        x = x.reshape(-1, 16).astype(np.float32)
-        # 0인 값을 1로 대체 후 log2 (log2(1)=0)
-        x = np.log2(np.maximum(x, 1))
-        x = x / MAX_POWER
-        return x
+        """보드 전처리: 원핫 인코딩 (각 셀 → 16채널)"""
+        x = x.reshape(-1, 16).astype(np.int32)
+        batch = x.shape[0]
+        onehot = np.zeros((batch, INPUT_SIZE), dtype=np.float32)
+        for b in range(batch):
+            for i in range(16):
+                v = x[b, i]
+                if v == 0:
+                    ch = 0
+                else:
+                    ch = int(np.log2(v))
+                    if ch >= NUM_CHANNELS:
+                        ch = NUM_CHANNELS - 1
+                onehot[b, i * NUM_CHANNELS + ch] = 1.0
+        return onehot
 
     def _relu(self, x: np.ndarray) -> np.ndarray:
         return np.maximum(0, x)

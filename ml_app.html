@@ -301,7 +301,8 @@ class Game2048 {
 // 작업 2: QNetwork JS 포팅
 // ============================================================
 
-const MAX_POWER = 15;
+const NUM_CHANNELS = 16;  // 원핫 채널: 0, 2^1, ..., 2^15
+const INPUT_SIZE = 4 * 4 * NUM_CHANNELS;  // 256
 const GRAD_NORM_LIMIT = 1.0;
 const HUBER_DELTA = 1.0;
 
@@ -355,7 +356,7 @@ class QNetwork {
         const h = hiddenSize;
         const xavier = (fanIn) => Math.sqrt(2.0 / fanIn);
 
-        this.w1 = this._randMatrix(16, h, xavier(16));
+        this.w1 = this._randMatrix(INPUT_SIZE, h, xavier(INPUT_SIZE));
         this.b1 = zeros(h);
         this.w2 = this._randMatrix(h, h, xavier(h));
         this.b2 = zeros(h);
@@ -374,12 +375,14 @@ class QNetwork {
     }
 
     _preprocess(board) {
-        // board: 4x4 array → [1][16] normalized
-        const x = [new Float64Array(16)];
+        // board: 4x4 array → [1][256] 원핫 인코딩
+        const x = [new Float64Array(INPUT_SIZE)];
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
-                x[0][i * 4 + j] = v > 0 ? Math.log2(v) / MAX_POWER : 0;
+                const cell = i * 4 + j;
+                const ch = v > 0 ? Math.min(Math.floor(Math.log2(v)), NUM_CHANNELS - 1) : 0;
+                x[0][cell * NUM_CHANNELS + ch] = 1.0;
             }
         return x;
     }
