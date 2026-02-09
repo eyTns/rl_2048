@@ -108,7 +108,7 @@
 
         <!-- Network Graph -->
         <div class="network-section">
-            <h3>신경망 구조 (16 → 256 → 256 → 4)</h3>
+            <h3>신경망 구조 (256 → 256 → 256 → 4)</h3>
             <canvas id="networkCanvas" height="220"></canvas>
         </div>
 
@@ -306,8 +306,8 @@ class Game2048 {
 // 작업 2: QNetwork JS 포팅
 // ============================================================
 
-const MAX_EXPONENT = 16;  // 정규화 분모: log2(v) / MAX_EXPONENT
-const INPUT_SIZE = 4 * 4;  // 16 (셀당 1개 실수값)
+const NUM_CHANNELS = 16;  // 원핫 채널 수: exponent 1~16 (2^1 ~ 2^16)
+const INPUT_SIZE = 4 * 4 * NUM_CHANNELS;  // 256 (16셀 × 16채널)
 const GRAD_NORM_LIMIT = 1.0;
 const HUBER_DELTA = 1.0;
 
@@ -380,13 +380,18 @@ class QNetwork {
     }
 
     _preprocess(board) {
-        // board: 4x4 array → [1][16] 정규화 지수 인코딩
+        // board: 4x4 array → [1][256] 원핫 인코딩
         const x = [new Float64Array(INPUT_SIZE)];
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
-                const cell = i * 4 + j;
-                x[0][cell] = v > 0 ? Math.log2(v) / MAX_EXPONENT : 0.0;
+                if (v > 0) {
+                    const exp = Math.log2(v);  // 2→1, 4→2, ..., 65536→16
+                    const cell = i * 4 + j;
+                    if (exp >= 1 && exp <= NUM_CHANNELS) {
+                        x[0][cell * NUM_CHANNELS + exp - 1] = 1.0;
+                    }
+                }
             }
         return x;
     }

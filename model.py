@@ -1,7 +1,7 @@
 import numpy as np
 
-MAX_EXPONENT = 16  # 정규화 분모: log2(v) / MAX_EXPONENT
-INPUT_SIZE = 4 * 4  # 16 (셀당 1개 실수값)
+NUM_CHANNELS = 16  # 원핫 채널 수: exponent 1~16 (2^1 ~ 2^16)
+INPUT_SIZE = 4 * 4 * NUM_CHANNELS  # 256 (16셀 × 16채널)
 GRAD_NORM_LIMIT = 1.0
 HUBER_DELTA = 1.0
 
@@ -24,10 +24,18 @@ class QNetwork:
         self._cache = {}
 
     def _preprocess(self, x: np.ndarray) -> np.ndarray:
-        """보드 전처리: 정규화 지수 인코딩 (각 셀 → log2(v)/16)"""
-        x = x.reshape(-1, 16).astype(np.float32)
-        result = np.where(x > 0, np.log2(x) / MAX_EXPONENT, 0.0)
-        return result.astype(np.float32)
+        """보드 전처리: 원핫 인코딩 (각 셀 → 16채널 원핫)"""
+        flat = x.reshape(-1, 16).astype(np.int32)
+        batch = flat.shape[0]
+        result = np.zeros((batch, INPUT_SIZE), dtype=np.float32)
+        for b in range(batch):
+            for i in range(16):
+                v = flat[b, i]
+                if v > 0:
+                    exp = int(np.log2(v))  # 2→1, 4→2, ..., 65536→16
+                    if 1 <= exp <= NUM_CHANNELS:
+                        result[b, i * NUM_CHANNELS + exp - 1] = 1.0
+        return result
 
     def _relu(self, x: np.ndarray) -> np.ndarray:
         return np.maximum(0, x)
