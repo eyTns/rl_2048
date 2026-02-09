@@ -71,7 +71,7 @@ class TrainConfig(BaseModel):
     learning_rate: float = 0.001
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
-    epsilon_decay: float = 0.999
+    epsilon_decay: float = 0.99
     hidden_size: int = 128
 
 
