@@ -108,7 +108,7 @@
 
         <!-- Network Graph -->
         <div class="network-section">
-            <h3>신경망 구조 (16 → 128 → 128 → 4)</h3>
+            <h3>신경망 구조 (16 → 256 → 256 → 4)</h3>
             <canvas id="networkCanvas" height="220"></canvas>
         </div>
 
@@ -351,7 +351,7 @@ function randn() {
 }
 
 class QNetwork {
-    constructor(hiddenSize = 128) {
+    constructor(hiddenSize = 256) {
         this.hiddenSize = hiddenSize;
         const h = hiddenSize;
         const xavier = (fanIn) => Math.sqrt(2.0 / fanIn);
@@ -748,7 +748,7 @@ class MCTrainer {
 // ============================================================
 
 let env = new Game2048();
-let model = new QNetwork(128);
+let model = new QNetwork(256);
 let currentStep = 0;
 let currentEpisode = 0;
 let activeTrainer = null;  // 현재 실행 중인 트레이너 (중지용)
@@ -805,7 +805,7 @@ function drawNetwork() {
     const layers = [16, 16, 16, 4];  // 표시 노드 수
     const layerLabels = ['입력', '은닉1', '은닉2', '출력'];
     const weights = [model.w1, model.w2, model.w3];
-    const groupSizes = [1, 8, 8, 1];  // 그룹당 실제 뉴런 수
+    const groupSizes = [1, 16, 16, 1];  // 그룹당 실제 뉴런 수
     const pad = 40;
     const layerX = layers.map((_, i) => pad + i * (w - 2 * pad) / (layers.length - 1));
 
@@ -898,7 +898,7 @@ function setRunning(v) {
 }
 
 document.getElementById('btnNewModel').addEventListener('click', () => {
-    model = new QNetwork(128);
+    model = new QNetwork(256);
     setStatus('새 모델 생성');
     drawNetwork();
     // 에피소드/epsilon 초기화 표시

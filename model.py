@@ -9,7 +9,7 @@ HUBER_DELTA = 1.0
 class QNetwork:
     """2048용 Q-Network (NumPy 구현)"""
 
-    def __init__(self, hidden_size: int = 128):
+    def __init__(self, hidden_size: int = 256):
         self.hidden_size = hidden_size
 
         # Xavier 초기화

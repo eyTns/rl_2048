@@ -72,7 +72,7 @@ class TrainConfig(BaseModel):
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
     epsilon_decay: float = 0.99
-    hidden_size: int = 128
+    hidden_size: int = 256
 
 
 class BaseTrainer:
