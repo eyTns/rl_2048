@@ -226,7 +226,7 @@ class TDTrainer(BaseTrainer):
         return 0.0
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습"""
+        """SARSA: 1스텝 지연, D4 대칭 8배 증강 학습 (선계산 후 학습)"""
         if len(episode) < 2:
             return None
 
@@ -234,7 +234,8 @@ class TDTrainer(BaseTrainer):
         curr_step = episode[-1]
         r = self._ln_reward(prev_step.reward)
 
-        total_loss = 0.0
+        # 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
+        train_items = []
         for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
             aug_curr = _augment_board(curr_step.state, rot_k, flip)
             aug_curr_action = action_map[curr_step.action]
@@ -243,24 +244,35 @@ class TDTrainer(BaseTrainer):
 
             aug_prev = _augment_board(prev_step.state, rot_k, flip)
             aug_prev_action = action_map[prev_step.action]
+            train_items.append((aug_prev, aug_prev_action, target))
+
+        # 2단계: 고정된 target으로 학습
+        total_loss = 0.0
+        for aug_prev, aug_prev_action, target in train_items:
             self.model.forward(aug_prev)
             total_loss += self.model.backward(aug_prev_action, target, self.lr)
 
         return total_loss / 8
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습 (다음 행동 없음), D4 8배 증강"""
+        """마지막 스텝 학습 (다음 행동 없음), D4 8배 증강 (선계산 후 학습)"""
         if not episode:
             return []
         last_step = episode[-1]
         r = self._ln_reward(last_step.reward)
 
-        total_loss = 0.0
+        # 1단계: 8개 증강 보드/액션 선계산 (target은 r로 고정)
+        train_items = []
         for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
             aug_state = _augment_board(last_step.state, rot_k, flip)
             aug_action = action_map[last_step.action]
+            train_items.append((aug_state, aug_action, r))
+
+        # 2단계: 고정된 target으로 학습
+        total_loss = 0.0
+        for aug_state, aug_action, target in train_items:
             self.model.forward(aug_state)
-            total_loss += self.model.backward(aug_action, r, self.lr)
+            total_loss += self.model.backward(aug_action, target, self.lr)
 
         return [total_loss / 8]
 
@@ -296,15 +308,20 @@ class MCTrainer(BaseTrainer):
             returns.append(G)
         returns.reverse()
 
-        # 각 스텝 학습 (D4 대칭 8배 증강)
+        # 각 스텝 학습 (D4 대칭 8배 증강, 선계산 후 학습)
         losses = []
         for step, target in zip(episode, returns):
-            total_loss = 0.0
+            # 1단계: 8개 증강 보드/액션 선계산 (target은 고정)
+            train_items = []
             for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
                 aug_state = _augment_board(step.state, rot_k, flip)
                 aug_action = action_map[step.action]
+                train_items.append((aug_state, aug_action, target))
+            # 2단계: 고정된 target으로 학습
+            total_loss = 0.0
+            for aug_state, aug_action, t in train_items:
                 self.model.forward(aug_state)
-                total_loss += self.model.backward(aug_action, target, self.lr)
+                total_loss += self.model.backward(aug_action, t, self.lr)
             losses.append(total_loss / 8)
 
         return losses

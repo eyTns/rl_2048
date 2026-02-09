@@ -124,6 +124,7 @@
             <button id="btnTD">TD 학습</button>
             <button id="btnMC">MC 학습</button>
             <label>n=<input type="number" id="inputN" value="9999" min="1" max="10000"></label>
+            <label><input type="checkbox" id="chkCurriculum"> 커리큘럼</label>
             <button id="btnStop" class="accent" disabled>중지</button>
         </div>
     </div>
@@ -591,7 +592,8 @@ class TDTrainer {
             // SARSA: 이전 스텝 학습 — target = ln(r) + γ * Q(s', a')
             if (prevStep) {
                 const r = lnReward(prevStep.reward);
-                let totalLoss = 0;
+                // 1단계: 현재 가중치 기준으로 8개 target 선계산 (freeze)
+                const trainItems = [];
                 for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
                     const augCurr = augmentBoard(state, rotK, flip);
                     const augCurrAction = actionMap[action];
@@ -599,8 +601,13 @@ class TDTrainer {
                     const target = r + this.cfg.gamma * qNext;
                     const augPrev = augmentBoard(prevStep.state, rotK, flip);
                     const augPrevAction = actionMap[prevStep.action];
-                    this.model.forward(augPrev);
-                    totalLoss += this.model.backward(augPrevAction, target, this.cfg.learningRate);
+                    trainItems.push({ state: augPrev, action: augPrevAction, target });
+                }
+                // 2단계: 고정된 target으로 학습
+                let totalLoss = 0;
+                for (const item of trainItems) {
+                    this.model.forward(item.state);
+                    totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
                 }
                 losses.push(totalLoss / 8);
             }
@@ -615,15 +622,19 @@ class TDTrainer {
             if (stepNum % 5 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        // 마지막 스텝: target = ln(r_T)
+        // 마지막 스텝: target = ln(r_T) — 고정값이므로 선계산 불필요
         if (prevStep) {
             const r = lnReward(prevStep.reward);
-            let totalLoss = 0;
+            const trainItems = [];
             for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
                 const augPrev = augmentBoard(prevStep.state, rotK, flip);
                 const augPrevAction = actionMap[prevStep.action];
-                this.model.forward(augPrev);
-                totalLoss += this.model.backward(augPrevAction, r, this.cfg.learningRate);
+                trainItems.push({ state: augPrev, action: augPrevAction, target: r });
+            }
+            let totalLoss = 0;
+            for (const item of trainItems) {
+                this.model.forward(item.state);
+                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
             }
             losses.push(totalLoss / 8);
         }
@@ -685,15 +696,21 @@ class MCTrainer {
             returns[i] = G;
         }
 
-        // 각 스텝 학습 — D4 8x 증강
+        // 각 스텝 학습 — D4 8x 증강 (선계산 후 학습)
         const losses = [];
         for (let i = 0; i < episode.length; i++) {
-            let totalLoss = 0;
+            // 1단계: 8개 증강 보드/액션 선계산 (target은 returns[i]로 고정)
+            const trainItems = [];
             for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
                 const augState = augmentBoard(episode[i].state, rotK, flip);
                 const augAction = actionMap[episode[i].action];
-                this.model.forward(augState);
-                totalLoss += this.model.backward(augAction, returns[i], this.cfg.learningRate);
+                trainItems.push({ state: augState, action: augAction, target: returns[i] });
+            }
+            // 2단계: 고정된 target으로 학습
+            let totalLoss = 0;
+            for (const item of trainItems) {
+                this.model.forward(item.state);
+                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
             }
             losses.push(totalLoss / 8);
         }
@@ -925,14 +942,15 @@ document.getElementById('btnTD').addEventListener('click', async () => {
     if (running) return;
     setRunning(true);
     const n = parseInt(document.getElementById('inputN').value) || 1;
-    setStatus(`TD 학습 중... (0/${n})`);
-    env = new Game2048();
+    const curriculum = document.getElementById('chkCurriculum').checked;
+    setStatus(`TD 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
+    env = new Game2048(curriculum);
     const trainer = new TDTrainer(model);
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
-        setStatus(`TD 학습 중... (${result.episode}/${n})`);
+        setStatus(`TD 학습 중... (${result.episode}/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     });
     const msg = trainer.aborted ? `TD 학습 중단 · ${trainer.episodeCount}게임` : `TD 학습 완료 · ${n}게임`;
     setStatus(msg);
@@ -944,14 +962,15 @@ document.getElementById('btnMC').addEventListener('click', async () => {
     if (running) return;
     setRunning(true);
     const n = parseInt(document.getElementById('inputN').value) || 1;
-    setStatus(`MC 학습 중... (0/${n})`);
-    env = new Game2048();
+    const curriculum = document.getElementById('chkCurriculum').checked;
+    setStatus(`MC 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
+    env = new Game2048(curriculum);
     const trainer = new MCTrainer(model);
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
         onEpisodeUI(result);
-        setStatus(`MC 학습 중... (${result.episode}/${n})`);
+        setStatus(`MC 학습 중... (${result.episode}/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     });
     const msg = trainer.aborted ? `MC 학습 중단 · ${trainer.episodeCount}게임` : `MC 학습 완료 · ${n}게임`;
     setStatus(msg);
