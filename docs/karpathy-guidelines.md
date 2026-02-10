@@ -65,11 +65,3 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-## 5. Act, Don't Ask
-
-**If the direction is clear, execute. Don't stall with confirmation requests.**
-
-- Proposals that end with "shall I proceed?" are treated as declined.
-- If the task is understood, act on it. Don't wait for a green light.
-- Clarification questions about *what* to do are fine. Confirmation-seeking about *whether* to do it is not.
