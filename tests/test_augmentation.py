@@ -5,8 +5,8 @@
 
 import numpy as np
 
-from game2048 import Game2048
-from trainer import BOARD_AUGMENTATIONS, _augment_board
+from src.game2048 import Game2048
+from src.trainer import BOARD_AUGMENTATIONS, _augment_board
 
 # 비대칭 보드 (모든 변환에서 구별 가능)
 ASYM_BOARD = np.array(

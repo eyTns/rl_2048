@@ -1,6 +1,6 @@
 import numpy as np
 
-from game2048 import Game2048
+from src.game2048 import Game2048
 
 
 class TestGame2048:

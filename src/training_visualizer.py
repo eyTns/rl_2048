@@ -19,7 +19,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-from trainer import BaseTrainer, EpisodeResult, StepInfo
+from .trainer import BaseTrainer, EpisodeResult, StepInfo
 
 MOVING_AVERAGE_WINDOW = 50
 DOWNSAMPLE_THRESHOLD = 2000
@@ -228,7 +228,7 @@ class TrainingVisualizer:
 
         @app.get("/", response_class=HTMLResponse)
         def dashboard():
-            html_path = Path(__file__).parent / "training_dashboard.html"
+            html_path = Path(__file__).parent.parent / "static" / "training_dashboard.html"
             return html_path.read_text(encoding="utf-8")
 
         @app.get("/api/metrics")
@@ -261,7 +261,7 @@ class TrainingVisualizer:
         Args:
             path: 저장할 파일 경로
         """
-        template_path = Path(__file__).parent / "training_dashboard.html"
+        template_path = Path(__file__).parent.parent / "static" / "training_dashboard.html"
         html = template_path.read_text(encoding="utf-8")
 
         data_json = json.dumps(self.metrics.to_dict(), ensure_ascii=False)
@@ -275,7 +275,7 @@ class TrainingVisualizer:
 
 
 if __name__ == "__main__":
-    from trainer import TrainConfig, create_trainer
+    from .trainer import TrainConfig, create_trainer
 
     print("=== 학습 시각화 데모 ===")
     config = TrainConfig(method="td", gamma=0.999999)

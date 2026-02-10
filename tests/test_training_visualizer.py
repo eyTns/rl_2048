@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from trainer import EpisodeResult, StepInfo, TrainConfig, create_trainer
-from training_visualizer import (
+from src.trainer import EpisodeResult, StepInfo, TrainConfig, create_trainer
+from src.training_visualizer import (
     TrainingMetrics,
     TrainingVisualizer,
     _downsample_indices,
