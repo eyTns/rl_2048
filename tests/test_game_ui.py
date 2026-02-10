@@ -1,6 +1,6 @@
 """game_ui.py 테스트"""
 
-from game_ui import COLORS, BoardRenderer
+from src.game_ui import COLORS, BoardRenderer
 
 
 class TestColors:

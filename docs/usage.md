@@ -15,7 +15,7 @@ uv sync  # pygame, fastapi, uvicorn 포함
 ### 컴퓨터 UI (pygame)
 
 ```bash
-uv run python game_ui.py
+uv run python -m src.game_ui
 ```
 
 - 조작: 화살표 키 또는 WASD
@@ -25,7 +25,7 @@ uv run python game_ui.py
 ### 모바일/웹 UI (FastAPI 서버)
 
 ```bash
-uv run python web_ui.py
+uv run python -m src.web_ui
 ```
 
 - 접속: http://localhost:8000
@@ -34,7 +34,7 @@ uv run python web_ui.py
 
 ### 정적 웹 UI (서버 불필요)
 
-브라우저에서 `static_ui.html` 파일 직접 열기
+브라우저에서 `static/static_ui.html` 파일 직접 열기
 
 - GitHub Pages 배포 가능
 - 조작: 터치 스와이프 또는 키보드
@@ -61,7 +61,7 @@ action 값:
 ### 기본 사용
 
 ```python
-from trainer import TrainConfig, create_trainer
+from src.trainer import TrainConfig, create_trainer
 
 # SARSA 학습 (gamma=0.9999)
 config = TrainConfig(method='td', gamma=0.9999)
@@ -103,7 +103,7 @@ trainer.train(episodes=1000, print_every=500)
 ### 시각화 콜백
 
 ```python
-from trainer import StepInfo, EpisodeResult
+from src.trainer import StepInfo, EpisodeResult
 
 def on_step(info: StepInfo):
     """매 스텝 호출"""
@@ -130,7 +130,7 @@ trainer.model.load("model.npz")
 ### 커리큘럼 모드
 
 ```python
-from game2048 import Game2048
+from src.game2048 import Game2048
 
 # 커리큘럼 모드: 하단줄에 정렬된 랜덤 타일, 우상단에 2
 env = Game2048(curriculum_mode=True)

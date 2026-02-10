@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from game2048 import Game2048
+from .game2048 import Game2048
 
 app = FastAPI()
 game = Game2048()

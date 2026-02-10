@@ -3,8 +3,8 @@ from typing import Callable, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from game2048 import Game2048
-from model import QNetwork
+from .game2048 import Game2048
+from .model import QNetwork
 
 # D4 대칭군: 4회전 × 2대칭 = 8변환
 # (rot_k, flip, action_map) — action: 0=상, 1=하, 2=좌, 3=우
