@@ -644,7 +644,7 @@ class TDTrainer {
             state = nextState;
             stepNum++;
 
-            if (stepNum % 5 === 0) await new Promise(r => setTimeout(r, 0));
+            await new Promise(r => setTimeout(r, 0));
         }
 
         // 게임오버 보드 표시
