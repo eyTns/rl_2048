@@ -1,0 +1,172 @@
+<!-- AI 수정 가능 -->
+
+# DQN 2048 실험 가이드
+
+성공적인 DQN 구현체(GitHub: IsacPasianotto, SergioIommi, Lok Hin Chan)와 논문 데이터를 종합한 실험 세팅.
+목표: 1024~2048 타일 도달, 점수 10,000~20,000.
+
+---
+
+## 1. 현재 구현 vs 권장 설정
+
+| 항목 | 현재 (ml_app.html) | 권장 | 비고 |
+|------|-------------------|------|------|
+| γ (gamma) | 0.9999 | 0.99 | 2048은 장기 계획 필수이나, 0.9999는 발산 위험. 0.99가 안정적 |
+| α (learning rate) | 0.001 | 5e-5 ~ 1e-4 | 현재 값은 10~20배 높음. 학습 불안정의 주원인 |
+| ε 시작 | 0.05 | 0.9 ~ 1.0 | 초기에 충분한 탐험 필요 |
+| ε 최소 | 0.0001 | 0.01 | 너무 낮으면 exploitation에 갇힘 |
+| ε 감쇠 | 0.99 (에피소드당) | 0.9999 (에피소드당) | 현재: 100 에피소드면 ε≈0.37. 권장: 10,000 에피소드면 ε≈0.37 |
+| Replay Buffer | 없음 | 10,000 ~ 50,000 | 샘플 간 상관관계를 끊어 학습 안정화 |
+| Target Network | 없음 | 1,000 ~ 2,000 step마다 복사 | Q함수 업데이트 안정화 |
+| 리워드 함수 | √(reward) | log₂(merged_value) | 기하급수적 성장 억제 |
+| Invalid Move | 페널티 없음 | -0.1 또는 -10 | 유효하지 않은 이동 빠르게 교정 |
+| One-Hot Encoding | 구현됨 (16채널) | 구현 필요 | OK |
+| D4 대칭 증강 | 코드 있으나 비활성 | 8배 증강 | 재활성화 필요 |
+
+---
+
+## 2. 리워드 함수
+
+### 방법 A: 로그 방식 (안정적, 권장)
+
+머지 발생 시 log₂(new_tile_value), 그 외 0.
+
+```
+4+4 → 8 → 보상 = log₂(8) = 3
+128+128 → 256 → 보상 = log₂(256) = 8
+```
+
+값 범위가 1~17로 일정하여 학습이 안정적.
+
+### 방법 B: Score 방식 (직관적)
+
+실제 게임 점수를 그대로 사용.
+단, 정규화 또는 Gradient Clipping 필수.
+
+```
+4+4 → 8 → 보상 = 8
+128+128 → 256 → 보상 = 256
+```
+
+### 공통: Invalid Move 페널티
+
+유효하지 않은 이동에 -0.1 페널티를 주어 벽에 부딪히는 행동을 빠르게 교정.
+
+---
+
+## 3. 핵심 수식
+
+### Q-Learning Update (Target Network 사용)
+
+```
+Q(s, a) ← Q(s, a) + α [ r + γ max_a' Q_target(s', a') - Q(s, a) ]
+```
+
+- s, a: 현재 상태(보드)와 행동(상/하/좌/우)
+- r: 리워드
+- s': 다음 상태
+- Q_target: 타겟 네트워크 (C 스텝마다 메인 네트워크에서 복사)
+
+---
+
+## 4. 실험 계획: 단계별 적용
+
+HTML 파일에서 직접 실험. 한 번에 하나씩 변경하여 효과 측정.
+
+### 실험 1: 하이퍼파라미터 조정 (코드 변경 최소)
+
+UI 컨트롤에서 바로 변경 가능한 항목:
+
+```
+ε 시작: 0.05 → 0.9
+ε 감쇠: 0.99 → 0.9999
+ε 최소: 0.0001 → 0.01
+```
+
+코드 수정 필요:
+```javascript
+// DEFAULT_CONFIG 변경
+gamma: 0.9999 → 0.99
+learningRate: 0.001 → 0.0001
+```
+
+### 실험 2: 리워드 함수 변경
+
+```javascript
+// 현재: √(reward)
+function scaleReward(reward) {
+    return Math.sqrt(reward);
+}
+
+// 변경: log₂ 방식
+function scaleReward(reward) {
+    return reward > 0 ? Math.log2(reward) : 0;
+}
+```
+
+### 실험 3: D4 대칭 증강 재활성화
+
+TDTrainer와 MCTrainer에서 주석 해제.
+현재 "학습 성능 저하 의심"으로 비활성화되어 있으나, 다른 하이퍼파라미터가 수정된 후 재시도 가치 있음.
+
+### 실험 4: Replay Buffer 구현
+
+```javascript
+class ReplayBuffer {
+    constructor(maxSize = 10000) {
+        this.buffer = [];
+        this.maxSize = maxSize;
+    }
+    push(state, action, reward, nextState, done) {
+        if (this.buffer.length >= this.maxSize) {
+            this.buffer.shift();
+        }
+        this.buffer.push({ state, action, reward, nextState, done });
+    }
+    sample(batchSize = 32) {
+        const indices = [];
+        for (let i = 0; i < batchSize; i++) {
+            indices.push(Math.floor(Math.random() * this.buffer.length));
+        }
+        return indices.map(i => this.buffer[i]);
+    }
+    get size() { return this.buffer.length; }
+}
+```
+
+### 실험 5: Target Network 구현
+
+```javascript
+// 메인 네트워크와 동일 구조의 타겟 네트워크
+let targetModel = QNetwork.fromJSON(model.toJSON());
+
+// C 스텝(1000~2000)마다 동기화
+if (totalSteps % TARGET_UPDATE_FREQ === 0) {
+    targetModel = QNetwork.fromJSON(model.toJSON());
+}
+
+// 타겟 계산 시 targetModel 사용
+const target = r + gamma * Math.max(...targetModel.forward(nextState));
+```
+
+---
+
+## 5. 고급 기법 (한계 돌파용)
+
+순수 DQN의 한계(4096+ 타일 꾸준히 생성)를 넘기 위한 추가 기법:
+
+- 분포형 강화학습 (Distributional RL)
+- 우선순위 경험 재생 (PER): 중요한 경험을 더 자주 샘플링
+- CNN을 깊게 쌓기: 4x4x16 입력에 Conv2D 적용
+- Expectimax Search 혼합: 탐색 알고리즘과 DQN 결합
+
+---
+
+## 6. 측정 기준
+
+각 실험의 성과를 비교하기 위한 지표:
+
+- 100 에피소드 평균 점수
+- 100 에피소드 중 최고 타일 분포 (512 도달률, 1024 도달률, 2048 도달률)
+- 학습 loss 추이
+- Q값 발산 여부
