@@ -2,8 +2,7 @@
 // QNetwork JS 포팅
 // ============================================================
 
-const NUM_CHANNELS = 16;  // 원핫 채널 수: exponent 1~16 (2^1 ~ 2^16)
-const INPUT_SIZE = 4 * 4 * NUM_CHANNELS;  // 256 (16셀 × 16채널)
+const INPUT_SIZE = 4 * 4;  // 16 (각 셀의 log2 값)
 const GRAD_NORM_LIMIT = 1.0;
 const HUBER_DELTA = 1.0;
 
@@ -123,17 +122,11 @@ class QNetwork {
     }
 
     _preprocessInto(board, x) {
-        // board: 4x4 array → x[1][256] 원핫 인코딩 (in-place)
-        x[0].fill(0);
+        // board: 4x4 array → x[1][16] log2 인코딩 (in-place)
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
-                if (v > 0) {
-                    const exp = Math.log2(v);  // 2→1, 4→2, ..., 65536→16
-                    const cell = i * 4 + j;
-                    if (exp >= 1 && exp <= NUM_CHANNELS)
-                        x[0][cell * NUM_CHANNELS + exp - 1] = 1.0;
-                }
+                x[0][i * 4 + j] = v > 0 ? Math.log2(v) : 0;
             }
     }
 

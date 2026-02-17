@@ -10,8 +10,10 @@ const DEFAULT_CONFIG = {
     epsilonDecay: 0.99,
 };
 
+const INVALID_ACTION_TARGET = -10;
+
 function scaleReward(reward) {
-    return Math.sqrt(reward);
+    return reward > 0 ? Math.log2(reward) : 0;
 }
 
 // D4 대칭 그룹: [rot_k, flip, actionMap]
@@ -106,7 +108,7 @@ class TDTrainer {
             for (let a = 0; a < 4; a++) {
                 if (!validActions.includes(a)) {
                     this.model.forward(state);
-                    this.model.backward(a, 0, this.cfg.learningRate);
+                    this.model.backward(a, INVALID_ACTION_TARGET, this.cfg.learningRate);
                 }
             }
 
@@ -215,7 +217,7 @@ class MCTrainer {
             for (let a = 0; a < 4; a++) {
                 if (!episode[i].validActions.includes(a)) {
                     this.model.forward(episode[i].state);
-                    this.model.backward(a, 0, this.cfg.learningRate);
+                    this.model.backward(a, INVALID_ACTION_TARGET, this.cfg.learningRate);
                 }
             }
         }
