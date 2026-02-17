@@ -72,7 +72,7 @@ class TDTrainer {
 
         while (!env.done && !this.aborted) {
             const validActions = env.getValidActions();
-            const action = this.model.getAction(state, validActions, this.epsilon);
+            const { action, qValues } = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
             // SARSA: 이전 스텝 학습 — target = √r + γ * Q(s', a')
@@ -110,7 +110,6 @@ class TDTrainer {
                 }
             }
 
-            const qValues = this.model.forward(state);
             if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
 
             prevStep = { state: state.map(r => [...r]), action, reward };
@@ -164,9 +163,8 @@ class MCTrainer {
         // 에피소드 수집
         while (!env.done && !this.aborted) {
             const validActions = env.getValidActions();
-            const action = this.model.getAction(state, validActions, this.epsilon);
+            const { action, qValues } = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
-            const qValues = this.model.forward(state);
             episode.push({ state: state.map(r => [...r]), action, reward, done, qValues, validActions });
 
             if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: null, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });

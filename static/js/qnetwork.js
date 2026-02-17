@@ -13,36 +13,64 @@ function zeros(rows, cols) {
     return Array.from({ length: rows }, () => new Float64Array(cols));
 }
 
-function matMul(A, B) {
-    // A: [m][k], B: [k][n] → C: [m][n]
+// In-place matmul: C = A * B (i,p,j 순서 — 캐시 친화적)
+function matMulInto(A, B, C) {
     const m = A.length, k = B.length, n = B[0].length;
-    const C = Array.from({ length: m }, () => new Float64Array(n));
-    for (let i = 0; i < m; i++)
-        for (let j = 0; j < n; j++) {
-            let s = 0;
-            for (let p = 0; p < k; p++) s += A[i][p] * B[p][j];
-            C[i][j] = s;
+    for (let i = 0; i < m; i++) C[i].fill(0);
+    for (let i = 0; i < m; i++) {
+        const Ai = A[i], Ci = C[i];
+        for (let p = 0; p < k; p++) {
+            const aip = Ai[p], Bp = B[p];
+            for (let j = 0; j < n; j++)
+                Ci[j] += aip * Bp[j];
         }
-    return C;
+    }
 }
 
-function transpose(A) {
-    const m = A.length, n = A[0].length;
-    const T = Array.from({ length: n }, () => new Float64Array(m));
-    for (let i = 0; i < m; i++)
-        for (let j = 0; j < n; j++)
-            T[j][i] = A[i][j];
-    return T;
+// In-place bias 덧셈: A[i][j] += b[j]
+function addBiasInplace(A, b) {
+    for (let i = 0; i < A.length; i++) {
+        const Ai = A[i];
+        for (let j = 0; j < Ai.length; j++)
+            Ai[j] += b[j];
+    }
 }
 
-function addBias(A, b) {
-    // A: [m][n], b: Float64Array(n) → A[i][j] + b[j]
-    const m = A.length, n = A[0].length;
-    const R = Array.from({ length: m }, () => new Float64Array(n));
-    for (let i = 0; i < m; i++)
-        for (let j = 0; j < n; j++)
-            R[i][j] = A[i][j] + b[j];
-    return R;
+// In-place ReLU: R[i][j] = max(0, A[i][j])
+function reluInto(A, R) {
+    for (let i = 0; i < A.length; i++) {
+        const Ai = A[i], Ri = R[i];
+        for (let j = 0; j < Ai.length; j++)
+            Ri[j] = Ai[j] > 0 ? Ai[j] : 0;
+    }
+}
+
+// In-place ReLU backward: dz[i][j] = z[i][j] > 0 ? da[i][j] : 0
+function reluBackwardInto(da, z, dz) {
+    for (let i = 0; i < da.length; i++) {
+        const dai = da[i], zi = z[i], dzi = dz[i];
+        for (let j = 0; j < dai.length; j++)
+            dzi[j] = zi[j] > 0 ? dai[j] : 0;
+    }
+}
+
+// In-place outer product: C[i][j] = a[i] * b[j]
+function outerProductInto(a, b, C) {
+    for (let i = 0; i < a.length; i++) {
+        const ai = a[i], Ci = C[i];
+        for (let j = 0; j < b.length; j++)
+            Ci[j] = ai * b[j];
+    }
+}
+
+// v * W^T (전치 생성 없이): out[j] = Σ_p v[p] * W[j][p]
+function vecMatTransposeInto(v, W, out) {
+    for (let j = 0; j < W.length; j++) {
+        let s = 0;
+        const Wj = W[j];
+        for (let p = 0; p < v.length; p++) s += v[p] * Wj[p];
+        out[j] = s;
+    }
 }
 
 function randn() {
@@ -64,7 +92,26 @@ class QNetwork {
         this.w3 = this._randMatrix(h, 4, xavier(h));
         this.b3 = zeros(4);
 
-        this._cache = {};
+        this._allocBuffers();
+    }
+
+    _allocBuffers() {
+        const h = this.hiddenSize;
+        this._buf = {
+            // forward 버퍼 (backward 캐시 겸용)
+            x: zeros(1, INPUT_SIZE),
+            z1: zeros(1, h), a1: zeros(1, h),
+            z2: zeros(1, h), a2: zeros(1, h),
+            z3: zeros(1, 4),
+            // backward 활성화 기울기 버퍼
+            dz3: zeros(1, 4),
+            da2: zeros(1, h), dz2: zeros(1, h),
+            da1: zeros(1, h), dz1: zeros(1, h),
+            // 가중치 기울기 버퍼
+            dw3: zeros(h, 4), db3: zeros(4),
+            dw2: zeros(h, h), db2: zeros(h),
+            dw1: zeros(INPUT_SIZE, h), db1: zeros(h),
+        };
     }
 
     _randMatrix(rows, cols, scale) {
@@ -75,37 +122,39 @@ class QNetwork {
         return M;
     }
 
-    _preprocess(board) {
-        // board: 4x4 array → [1][256] 원핫 인코딩
-        const x = [new Float64Array(INPUT_SIZE)];
+    _preprocessInto(board, x) {
+        // board: 4x4 array → x[1][256] 원핫 인코딩 (in-place)
+        x[0].fill(0);
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
                 if (v > 0) {
                     const exp = Math.log2(v);  // 2→1, 4→2, ..., 65536→16
                     const cell = i * 4 + j;
-                    if (exp >= 1 && exp <= NUM_CHANNELS) {
+                    if (exp >= 1 && exp <= NUM_CHANNELS)
                         x[0][cell * NUM_CHANNELS + exp - 1] = 1.0;
-                    }
                 }
             }
-        return x;
     }
 
     forward(board) {
-        const x = this._preprocess(board);
-        const z1 = addBias(matMul(x, this.w1), this.b1);
-        const a1 = z1.map(r => r.map(v => Math.max(0, v)));  // ReLU
-        const z2 = addBias(matMul(a1, this.w2), this.b2);
-        const a2 = z2.map(r => r.map(v => Math.max(0, v)));
-        const z3 = addBias(matMul(a2, this.w3), this.b3);
-
-        this._cache = { x, z1, a1, z2, a2, z3 };
-        return Array.from(z3[0]);  // [4] Q-values
+        const { x, z1, a1, z2, a2, z3 } = this._buf;
+        this._preprocessInto(board, x);
+        matMulInto(x, this.w1, z1);
+        addBiasInplace(z1, this.b1);
+        reluInto(z1, a1);
+        matMulInto(a1, this.w2, z2);
+        addBiasInplace(z2, this.b2);
+        reluInto(z2, a2);
+        matMulInto(a2, this.w3, z3);
+        addBiasInplace(z3, this.b3);
+        return [z3[0][0], z3[0][1], z3[0][2], z3[0][3]];
     }
 
     backward(action, target, lr = 0.001) {
-        const { x, z1, a1, z2, a2, z3 } = this._cache;
+        const { x, z1, a1, z2, a2, z3,
+                dz3, da2, dz2, da1, dz1,
+                dw3, db3, dw2, db2, dw1, db1 } = this._buf;
         const qVal = z3[0][action];
         if (isNaN(qVal)) return 0;
 
@@ -121,24 +170,24 @@ class QNetwork {
         }
 
         // dz3: [1][4]
-        const dz3 = [new Float64Array(4)];
+        dz3[0].fill(0);
         dz3[0][action] = dloss;
 
-        // Layer 3
-        const dw3 = matMul(transpose(a2), dz3);
-        const db3 = new Float64Array(dz3[0]);
-        const da2 = matMul(dz3, transpose(this.w3));
+        // Layer 3: dw3 = a2^T · dz3, da2 = dz3 · w3^T
+        outerProductInto(a2[0], dz3[0], dw3);
+        db3.set(dz3[0]);
+        vecMatTransposeInto(dz3[0], this.w3, da2[0]);
 
         // Layer 2 (ReLU backward)
-        const dz2 = da2.map((r, i) => r.map((v, j) => z2[i][j] > 0 ? v : 0));
-        const dw2 = matMul(transpose(a1), dz2);
-        const db2 = new Float64Array(dz2[0]);
-        const da1 = matMul(dz2, transpose(this.w2));
+        reluBackwardInto(da2, z2, dz2);
+        outerProductInto(a1[0], dz2[0], dw2);
+        db2.set(dz2[0]);
+        vecMatTransposeInto(dz2[0], this.w2, da1[0]);
 
-        // Layer 1
-        const dz1 = da1.map((r, i) => r.map((v, j) => z1[i][j] > 0 ? v : 0));
-        const dw1 = matMul(transpose(x), dz1);
-        const db1 = new Float64Array(dz1[0]);
+        // Layer 1 (ReLU backward)
+        reluBackwardInto(da1, z1, dz1);
+        outerProductInto(x[0], dz1[0], dw1);
+        db1.set(dz1[0]);
 
         // Clip & update
         this._updateWeights(this.w3, dw3, this.b3, db3, lr);
@@ -148,54 +197,56 @@ class QNetwork {
         return loss;
     }
 
-    _clipNorm(g) {
-        // g: 2D array or 1D Float64Array → norm clip
+    _clipNormInplace(g, is2D) {
         let sumSq = 0;
-        if (g[0] instanceof Float64Array || Array.isArray(g[0])) {
-            for (let i = 0; i < g.length; i++)
-                for (let j = 0; j < g[0].length; j++)
-                    sumSq += g[i][j] * g[i][j];
+        if (is2D) {
+            for (let i = 0; i < g.length; i++) {
+                const gi = g[i];
+                for (let j = 0; j < gi.length; j++)
+                    sumSq += gi[j] * gi[j];
+            }
         } else {
             for (let j = 0; j < g.length; j++)
                 sumSq += g[j] * g[j];
         }
         const norm = Math.sqrt(sumSq);
-        if (norm <= GRAD_NORM_LIMIT) return g;
+        if (norm <= GRAD_NORM_LIMIT) return;
         const scale = GRAD_NORM_LIMIT / norm;
-        if (g[0] instanceof Float64Array || Array.isArray(g[0])) {
-            const c = Array.from({ length: g.length }, () => new Float64Array(g[0].length));
-            for (let i = 0; i < g.length; i++)
-                for (let j = 0; j < g[0].length; j++)
-                    c[i][j] = g[i][j] * scale;
-            return c;
+        if (is2D) {
+            for (let i = 0; i < g.length; i++) {
+                const gi = g[i];
+                for (let j = 0; j < gi.length; j++)
+                    gi[j] *= scale;
+            }
         } else {
-            const c = new Float64Array(g.length);
             for (let j = 0; j < g.length; j++)
-                c[j] = g[j] * scale;
-            return c;
+                g[j] *= scale;
         }
     }
 
     _updateWeights(w, dw, b, db, lr) {
-        dw = this._clipNorm(dw);
-        db = this._clipNorm(db);
-        for (let i = 0; i < w.length; i++)
-            for (let j = 0; j < w[0].length; j++)
-                w[i][j] -= lr * dw[i][j];
+        this._clipNormInplace(dw, true);
+        this._clipNormInplace(db, false);
+        for (let i = 0; i < w.length; i++) {
+            const wi = w[i], dwi = dw[i];
+            for (let j = 0; j < wi.length; j++)
+                wi[j] -= lr * dwi[j];
+        }
         for (let j = 0; j < b.length; j++)
             b[j] -= lr * db[j];
     }
 
     getAction(board, validActions, epsilon = 0) {
-        if (!validActions || validActions.length === 0) return 0;
-        if (Math.random() < epsilon)
-            return validActions[Math.floor(Math.random() * validActions.length)];
+        if (!validActions || validActions.length === 0) return { action: 0, qValues: [0, 0, 0, 0] };
         const q = this.forward(board);
+        if (Math.random() < epsilon) {
+            return { action: validActions[Math.floor(Math.random() * validActions.length)], qValues: q };
+        }
         let bestA = validActions[0], bestQ = -Infinity;
         for (const a of validActions) {
             if (q[a] > bestQ) { bestQ = q[a]; bestA = a; }
         }
-        return bestA;
+        return { action: bestA, qValues: q };
     }
 
     toJSON() {

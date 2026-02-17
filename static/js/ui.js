@@ -12,16 +12,25 @@ let running = false;
 let stepMode = false;      // 1스텝 모드 활성 여부
 let stepCount = 0;         // 1스텝 모드 스텝 카운터
 
-// --- 게임판 렌더링 ---
-function renderBoard(board) {
+// --- 게임판 렌더링 (DOM 재사용) ---
+function initGrid() {
     const grid = document.getElementById('grid');
     grid.innerHTML = '';
-    board.flat().forEach(v => {
+    for (let i = 0; i < 16; i++) {
         const tile = document.createElement('div');
-        tile.className = 'tile ' + (v > 2048 ? 'tbig' : 't' + v);
-        tile.textContent = v || '';
+        tile.className = 'tile t0';
         grid.appendChild(tile);
-    });
+    }
+}
+
+function renderBoard(board) {
+    const tiles = document.getElementById('grid').children;
+    const flat = board.flat();
+    for (let i = 0; i < 16; i++) {
+        const v = flat[i];
+        tiles[i].className = 'tile ' + (v > 2048 ? 'tbig' : 't' + v);
+        tiles[i].textContent = v || '';
+    }
 }
 
 // --- 정보 패널 업데이트 ---
@@ -171,6 +180,7 @@ function setRunning(v) {
 document.getElementById('btnNewModel').addEventListener('click', () => {
     model = new QNetwork(256);
     setStatus('새 모델 생성');
+    initGrid();
     drawNetwork();
     // 에피소드/epsilon 초기화 표시
     updateInfo({ episode: 0, epsilon: readEpsilonConfig().epsilonStart, score: 0, step: 0, reward: 0, maxTile: 0 });
@@ -222,8 +232,7 @@ document.getElementById('btnPlay').addEventListener('click', async () => {
     while (!env.done && !playAborted) {
         const validActions = env.getValidActions();
         if (validActions.length === 0) break;
-        const action = model.getAction(env.getState(), validActions, 0);
-        const qValues = model.forward(env.getState());
+        const { action, qValues } = model.getAction(env.getState(), validActions, 0);
         const { reward } = env.step(action);
         onStepUI({ stepNum: step, state: env.getState(), action, reward, qValues, validActions, done: env.done, score: env.score, maxTile: env.getMaxTile() });
         step++;
@@ -243,8 +252,7 @@ document.getElementById('btnStep').addEventListener('click', () => {
         stepCount = 0;
         stepMode = true;
         renderBoard(env.getState());
-        const qValues = model.forward(env.getState());
-        updateQBars(qValues, -1);
+        updateQBars(model.forward(env.getState()), -1);
         updateInfo({ score: 0, maxTile: env.getMaxTile(), step: 0, reward: 0 });
         setStatus('1스텝 모드 · 클릭하여 진행');
         return;
@@ -252,8 +260,7 @@ document.getElementById('btnStep').addEventListener('click', () => {
     // 1스텝 실행
     const validActions = env.getValidActions();
     if (validActions.length === 0) return;
-    const action = model.getAction(env.getState(), validActions, 0);
-    const qValues = model.forward(env.getState());
+    const { action, qValues } = model.getAction(env.getState(), validActions, 0);
     const { reward } = env.step(action);
     stepCount++;
     onStepUI({ stepNum: stepCount, state: env.getState(), action, reward, qValues, validActions, done: env.done, score: env.score, maxTile: env.getMaxTile() });
@@ -310,6 +317,7 @@ document.getElementById('btnStop').addEventListener('click', () => {
 });
 
 // --- 초기화 ---
+initGrid();
 env.reset();
 renderBoard(env.getState());
 drawNetwork();
