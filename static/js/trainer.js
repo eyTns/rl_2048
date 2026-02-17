@@ -67,30 +67,29 @@ class TDTrainer {
         }
     }
 
-    // k-step return: G = r_step + γ·r₁ + γ²·r₂ + ... + γᵏ⁻¹·rₖ₋₁ + γᵏ·Q(sₖ, aₖ)
-    // step.reward가 첫 보상, tailRewards가 이후 보상들, 끝에 bootstrap Q값
-    _kStepTarget(stepReward, tailRewards, bootstrapState, bootstrapAction, augRotK, augFlip, augActionMap) {
+    // n-step DQN: G = r_step + γ·r₁ + γ²·r₂ + ... + γᵏ⁻¹·rₖ₋₁ + γᵏ·max_a Q(sₖ, a)
+    _kStepTarget(stepReward, tailRewards, bootstrapState, augRotK, augFlip) {
         let G = scaleReward(stepReward);
         for (let i = 0; i < tailRewards.length; i++) {
             G += Math.pow(this.cfg.gamma, i + 1) * scaleReward(tailRewards[i]);
         }
-        // bootstrap: 게임이 끝나지 않았으면 Q(s', a') 추가
-        if (bootstrapAction >= 0) {
+        // bootstrap: 게임이 끝나지 않았으면 max_a Q(s', a) 추가
+        if (bootstrapState) {
             const augState = augmentBoard(bootstrapState, augRotK, augFlip);
-            const augAction = augActionMap[bootstrapAction];
-            const qNext = this.model.forward(augState)[augAction];
+            const qValues = this.model.forward(augState);
+            const qNext = Math.max(...qValues);
             G += Math.pow(this.cfg.gamma, tailRewards.length + 1) * qNext;
         }
         return G;
     }
 
     // D4 증강 + 학습
-    _learnWithAugmentation(step, tailRewards, bootstrapState, bootstrapAction) {
+    _learnWithAugmentation(step, tailRewards, bootstrapState) {
         const trainItems = [];
         for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
             const augState = augmentBoard(step.state, rotK, flip);
             const augAction = actionMap[step.action];
-            const target = this._kStepTarget(step.reward, tailRewards, bootstrapState, bootstrapAction, rotK, flip, actionMap);
+            const target = this._kStepTarget(step.reward, tailRewards, bootstrapState, rotK, flip);
             trainItems.push({ state: augState, action: augAction, target });
         }
         let totalLoss = 0;
@@ -121,7 +120,7 @@ class TDTrainer {
                 const step = buffer.shift();
                 const last = buffer[buffer.length - 1];
                 const tailRewards = buffer.slice(0, -1).map(s => s.reward);
-                const loss = this._learnWithAugmentation(step, tailRewards, last.state, last.action);
+                const loss = this._learnWithAugmentation(step, tailRewards, last.state);
                 losses.push(loss);
             }
 
@@ -145,21 +144,12 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // drain: 게임오버 → target = -10 (사망 패널티)
+        // drain: 게임오버 → 누적 보상만, bootstrap 없음 (미래 Q=0)
         while (buffer.length > 0) {
             const step = buffer.shift();
-            const trainItems = [];
-            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-                const augState = augmentBoard(step.state, rotK, flip);
-                const augAction = actionMap[step.action];
-                trainItems.push({ state: augState, action: augAction, target: INVALID_ACTION_TARGET });
-            }
-            let totalLoss = 0;
-            for (const item of trainItems) {
-                this.model.forward(item.state);
-                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
-            }
-            losses.push(totalLoss / 8);
+            const tailRewards = buffer.map(s => s.reward);
+            const loss = this._learnWithAugmentation(step, tailRewards, null);
+            losses.push(loss);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
