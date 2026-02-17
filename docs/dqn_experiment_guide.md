@@ -170,3 +170,17 @@ const target = r + gamma * Math.max(...targetModel.forward(nextState));
 - 100 에피소드 중 최고 타일 분포 (512 도달률, 1024 도달률, 2048 도달률)
 - 학습 loss 추이
 - Q값 발산 여부
+
+---
+
+## 7. JS 연산 성능 최적화
+
+| 항목 | 내용 | 상태 |
+|------|------|------|
+| A. scaleReward 룩업 테이블 | 연산 비중 미미 | 불채택 |
+| B. augmentBoard 캐싱 | 복잡도 대비 효과 적음 | 불채택 |
+| C. 중복 forward() 제거 | getAction이 qValues도 반환하여 호출부 중복 forward 삭제 | 적용 완료 |
+| D. 연산 버퍼 재사용 | 생성자에서 버퍼 1회 할당, in-place 연산, transpose 제거 | 적용 완료 |
+| E. renderBoard DOM 재사용 | initGrid로 16개 div 1회 생성, 이후 속성만 변경 | 적용 완료 |
+
+미적용 후보: Flat 1D 배열, WebAssembly, Web Worker, WebGPU
