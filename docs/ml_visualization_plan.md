@@ -161,10 +161,12 @@ QNetwork {
 }
 ```
 
-필요한 행렬 연산 유틸:
-- `matMul(A, B)` — 행렬 곱
-- `transpose(A)` — 전치
-- `relu(x)`, `clip(x, min, max)` — 원소별 연산
+행렬 연산 유틸 (in-place, 버퍼 재사용):
+- `matMulInto(A, B, C)` — C = A·B, i,p,j 루프 순서로 캐시 친화적
+- `addBiasInplace(A, b)` — A += b
+- `reluInto(A, R)` / `reluBackwardInto(da, z, dz)` — ReLU 순전파/역전파
+- `outerProductInto(a, b, C)` — C[i][j] = a[i]·b[j], transpose(x)·dz 대체
+- `vecMatTransposeInto(v, W, out)` — out = v·W^T, transpose 배열 생성 없이 연산
 
 ### 작업 3: Trainer JS 포팅
 

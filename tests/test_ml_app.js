@@ -2,26 +2,38 @@ const fs = require('fs');
 const vm = require('vm');
 
 // DOM mock
-const mkEl = () => ({
-    innerHTML: '', textContent: '', style: {}, className: '', href: '', download: '',
-    querySelector: () => mkEl(), querySelectorAll: () => [],
-    addEventListener: () => {}, appendChild: () => {}, click: () => {},
-    clientWidth: 800, value: '1', files: [],
-    getContext: () => new Proxy({}, { set: () => true, get: () => () => {} })
-});
+const mkEl = () => {
+    const el = {
+        textContent: '', style: {}, className: '', href: '', download: '',
+        _children: [],
+        get children() { return el._children; },
+        get innerHTML() { return ''; },
+        set innerHTML(_) { el._children = []; },
+        querySelector: () => mkEl(), querySelectorAll: () => [],
+        addEventListener: () => {},
+        appendChild: (child) => { el._children.push(child); return child; },
+        click: () => {},
+        clientWidth: 800, value: '1', files: [],
+        getContext: () => new Proxy({}, { set: () => true, get: () => () => {} })
+    };
+    return el;
+};
 
+const elCache = {};
 const sandbox = {
-    document: { getElementById: () => mkEl(), querySelectorAll: () => [], createElement: () => mkEl(), addEventListener: () => {} },
+    document: { getElementById: (id) => (elCache[id] = elCache[id] || mkEl()), querySelectorAll: () => [], createElement: () => mkEl(), addEventListener: () => {} },
     window: { devicePixelRatio: 1 },
     URL: { createObjectURL: () => '', revokeObjectURL: () => {} },
     console, setTimeout, Math, JSON, Array, Float64Array, Infinity, isNaN, parseInt,
     Promise, Blob: function(){},
 };
 
-const html = fs.readFileSync('ml_app.html', 'utf8');
-const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
+const staticDir = require('path').join(__dirname, '..', 'static');
+const jsFiles = ['js/game2048.js', 'js/qnetwork.js', 'js/trainer.js', 'js/ui.js'];
 vm.createContext(sandbox);
-vm.runInContext(script, sandbox);
+for (const f of jsFiles) {
+    vm.runInContext(fs.readFileSync(require('path').join(staticDir, f), 'utf8'), sandbox);
+}
 
 // Test script
 const testCode = `
