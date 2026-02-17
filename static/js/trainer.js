@@ -125,10 +125,18 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // 마지막 스텝: 게임오버 → Q target = 0
+        // 마지막 스텝: 게임오버 → Q target = r (미래 없음)
         if (prevStep) {
-            this.model.forward(prevStep.state);
-            losses.push(this.model.backward(prevStep.action, 0, this.cfg.learningRate));
+            const r = scaleReward(prevStep.reward);
+            // D4 대칭 8배 증강
+            let totalLoss = 0;
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augState = augmentBoard(prevStep.state, rotK, flip);
+                const augAction = actionMap[prevStep.action];
+                this.model.forward(augState);
+                totalLoss += this.model.backward(augAction, r, this.cfg.learningRate);
+            }
+            losses.push(totalLoss / 8);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
@@ -183,15 +191,16 @@ class MCTrainer {
         // 중단된 경우 학습하지 않음
         if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
 
-        // Return 계산 (역순) — √reward + gamma 할인
-        // 게임오버 스텝: G = 0 (미래 없음)
+        // Return 계산 (역순) — log reward + gamma 할인
+        // 게임오버 스텝: G = r (해당 스텝 리워드만, 미래 없음)
         const returns = new Array(episode.length);
         let G = 0;
         for (let i = episode.length - 1; i >= 0; i--) {
+            const r = scaleReward(episode[i].reward);
             if (episode[i].done) {
-                G = 0;
+                G = r;
             } else {
-                G = scaleReward(episode[i].reward) + this.cfg.gamma * G;
+                G = r + this.cfg.gamma * G;
             }
             returns[i] = G;
         }
