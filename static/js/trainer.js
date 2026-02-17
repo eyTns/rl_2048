@@ -145,12 +145,21 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // drain: 게임 끝났으므로 bootstrap 없이, 남은 보상만으로 학습
+        // drain: 게임오버 → target = -10 (사망 패널티)
         while (buffer.length > 0) {
             const step = buffer.shift();
-            const tailRewards = buffer.map(s => s.reward);
-            const loss = this._learnWithAugmentation(step, tailRewards, null, -1);
-            losses.push(loss);
+            const trainItems = [];
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augState = augmentBoard(step.state, rotK, flip);
+                const augAction = actionMap[step.action];
+                trainItems.push({ state: augState, action: augAction, target: INVALID_ACTION_TARGET });
+            }
+            let totalLoss = 0;
+            for (const item of trainItems) {
+                this.model.forward(item.state);
+                totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+            }
+            losses.push(totalLoss / 8);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
