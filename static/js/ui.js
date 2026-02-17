@@ -172,13 +172,13 @@ function onEpisodeUI(result) {
 }
 
 // --- 설정 읽기 ---
-function readEpsilonConfig() {
+function readConfig() {
     return {
         learningRate: parseFloat(document.getElementById('inputLearningRate').value) || DEFAULT_CONFIG.learningRate,
         epsilonStart: parseFloat(document.getElementById('inputEpsilonStart').value) || DEFAULT_CONFIG.epsilonStart,
         epsilonEnd: parseFloat(document.getElementById('inputEpsilonEnd').value) || DEFAULT_CONFIG.epsilonEnd,
         epsilonDecay: parseFloat(document.getElementById('inputEpsilonDecay').value) || DEFAULT_CONFIG.epsilonDecay,
-        nStep: parseInt(document.getElementById('inputNStep').value) || DEFAULT_CONFIG.nStep,
+        searchDepth: parseInt(document.getElementById('inputSearchDepth').value) || DEFAULT_CONFIG.searchDepth,
     };
 }
 
@@ -196,7 +196,7 @@ document.getElementById('btnNewModel').addEventListener('click', () => {
     initGrid();
     drawNetwork();
     // 에피소드/epsilon 초기화 표시
-    updateInfo({ episode: 0, epsilon: readEpsilonConfig().epsilonStart, score: 0, step: 0, reward: 0, maxTile: 0 });
+    updateInfo({ episode: 0, epsilon: readConfig().epsilonStart, score: 0, step: 0, reward: 0, maxTile: 0 });
     updateQBars([0, 0, 0, 0], -1);
 });
 
@@ -291,7 +291,7 @@ document.getElementById('btnTD').addEventListener('click', async () => {
     const curriculum = document.getElementById('chkCurriculum').checked;
     setStatus(`TD 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     env = new Game2048(curriculum);
-    const trainer = new TDTrainer(model, readEpsilonConfig());
+    const trainer = new TDTrainer(model, readConfig());
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
@@ -311,7 +311,7 @@ document.getElementById('btnMC').addEventListener('click', async () => {
     const curriculum = document.getElementById('chkCurriculum').checked;
     setStatus(`MC 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     env = new Game2048(curriculum);
-    const trainer = new MCTrainer(model, readEpsilonConfig());
+    const trainer = new MCTrainer(model, readConfig());
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
@@ -319,6 +319,27 @@ document.getElementById('btnMC').addEventListener('click', async () => {
         setStatus(`MC 학습 중... (${result.episode}/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     });
     const msg = trainer.aborted ? `MC 학습 중단 · ${trainer.episodeCount}게임` : `MC 학습 완료 · ${n}게임`;
+    setStatus(msg);
+    activeTrainer = null;
+    setRunning(false);
+});
+
+document.getElementById('btnTS').addEventListener('click', async () => {
+    if (running) return;
+    setRunning(true);
+    const n = parseInt(document.getElementById('inputN').value) || 1;
+    const curriculum = document.getElementById('chkCurriculum').checked;
+    const cfg = readConfig();
+    setStatus(`TS 학습 중... (0/${n}) [depth=${cfg.searchDepth}]${curriculum ? ' [커리큘럼]' : ''}`);
+    env = new Game2048(curriculum);
+    const trainer = new TSTrainer(model, cfg);
+    trainer.onStep = onStepUI;
+    activeTrainer = trainer;
+    await trainer.trainEpisodes(env, n, (result) => {
+        onEpisodeUI(result);
+        setStatus(`TS 학습 중... (${result.episode}/${n}) [depth=${cfg.searchDepth}]${curriculum ? ' [커리큘럼]' : ''}`);
+    });
+    const msg = trainer.aborted ? `TS 학습 중단 · ${trainer.episodeCount}게임` : `TS 학습 완료 · ${n}게임`;
     setStatus(msg);
     activeTrainer = null;
     setRunning(false);

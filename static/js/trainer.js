@@ -8,7 +8,7 @@ const DEFAULT_CONFIG = {
     epsilonStart: 0.05,
     epsilonEnd: 0.0001,
     epsilonDecay: 0.99,
-    nStep: 2,
+    searchDepth: 2,  // TS용: tree search 깊이
 };
 
 const INVALID_ACTION_TARGET = -10;
@@ -67,29 +67,18 @@ class TDTrainer {
         }
     }
 
-    // n-step DQN: G = r_step + γ·r₁ + γ²·r₂ + ... + γᵏ⁻¹·rₖ₋₁ + γᵏ·max_a Q(sₖ, a)
-    _kStepTarget(stepReward, tailRewards, bootstrapState, augRotK, augFlip) {
-        let G = scaleReward(stepReward);
-        for (let i = 0; i < tailRewards.length; i++) {
-            G += Math.pow(this.cfg.gamma, i + 1) * scaleReward(tailRewards[i]);
-        }
-        // bootstrap: 게임이 끝나지 않았으면 max_a Q(s', a) 추가
-        if (bootstrapState) {
-            const augState = augmentBoard(bootstrapState, augRotK, augFlip);
-            const qValues = this.model.forward(augState);
-            const qNext = Math.max(...qValues);
-            G += Math.pow(this.cfg.gamma, tailRewards.length + 1) * qNext;
-        }
-        return G;
-    }
-
-    // D4 증강 + 학습
-    _learnWithAugmentation(step, tailRewards, bootstrapState) {
+    // 1-step TD + D4 증강 학습
+    _learnStep(state, action, reward, nextState, done) {
         const trainItems = [];
         for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-            const augState = augmentBoard(step.state, rotK, flip);
-            const augAction = actionMap[step.action];
-            const target = this._kStepTarget(step.reward, tailRewards, bootstrapState, rotK, flip);
+            const augState = augmentBoard(state, rotK, flip);
+            const augAction = actionMap[action];
+            let target = scaleReward(reward);
+            if (!done) {
+                const augNext = augmentBoard(nextState, rotK, flip);
+                const qNext = this.model.forward(augNext);
+                target += this.cfg.gamma * Math.max(...qNext);
+            }
             trainItems.push({ state: augState, action: augAction, target });
         }
         let totalLoss = 0;
@@ -102,8 +91,6 @@ class TDTrainer {
 
     async _trainOne(env) {
         const losses = [];
-        const k = this.cfg.nStep;
-        const buffer = [];  // { state, action, reward }
         let state = env.reset();
         let stepNum = 0;
 
@@ -112,17 +99,9 @@ class TDTrainer {
             const { action, qValues } = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            buffer.push({ state: state.map(r => [...r]), action, reward });
-
-            // 버퍼에 k+1개 쌓이면 가장 오래된 스텝 학습
-            // buffer 마지막 항목의 (state, action)으로 bootstrap
-            if (buffer.length > k) {
-                const step = buffer.shift();
-                const last = buffer[buffer.length - 1];
-                const tailRewards = buffer.slice(0, -1).map(s => s.reward);
-                const loss = this._learnWithAugmentation(step, tailRewards, last.state);
-                losses.push(loss);
-            }
+            // 1-step TD 학습
+            const loss = this._learnStep(state.map(r => [...r]), action, reward, nextState, done);
+            losses.push(loss);
 
             // 갈 수 없는 방향: target = INVALID
             for (let a = 0; a < 4; a++) {
@@ -132,7 +111,7 @@ class TDTrainer {
                 }
             }
 
-            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
 
             state = nextState;
             stepNum++;
@@ -143,14 +122,6 @@ class TDTrainer {
         // 게임오버 보드 표시
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
-
-        // drain: 게임오버 → 누적 보상만, bootstrap 없음 (미래 Q=0)
-        while (buffer.length > 0) {
-            const step = buffer.shift();
-            const tailRewards = buffer.map(s => s.reward);
-            const loss = this._learnWithAugmentation(step, tailRewards, null);
-            losses.push(loss);
-        }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
     }
@@ -242,6 +213,147 @@ class MCTrainer {
                 }
             }
         }
+
+        return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
+    }
+}
+
+
+class TSTrainer {
+    constructor(model, config = {}) {
+        this.model = model;
+        this.cfg = { ...DEFAULT_CONFIG, ...config };
+        this.epsilon = this.cfg.epsilonStart;
+        this.episodeCount = 0;
+        this.onStep = null;
+        this.aborted = false;
+        this.searchDepth = this.cfg.searchDepth;
+    }
+
+    abort() { this.aborted = true; }
+
+    async trainEpisodes(env, n = 1, onEpisodeEnd = null) {
+        for (let ep = 0; ep < n; ep++) {
+            if (this.aborted) break;
+            const result = await this._trainOne(env);
+            this.episodeCount++;
+            this.epsilon = Math.max(this.cfg.epsilonEnd, this.epsilon * this.cfg.epsilonDecay);
+            if (onEpisodeEnd) onEpisodeEnd({ ...result, episode: this.episodeCount, epsilon: this.epsilon });
+        }
+    }
+
+    // k-step tree search: 모든 유효 행동을 재귀적으로 시뮬레이션
+    _treeSearch(board, depth) {
+        const sim = new Game2048();
+        sim.board = board.map(r => [...r]);
+        sim.done = !sim._canMove();
+
+        const validActions = sim.getValidActions();
+        if (validActions.length === 0) return { value: 0, action: -1 };
+
+        if (depth === 0) {
+            // 리프 노드: Q-network로 평가
+            const qValues = this.model.forward(board);
+            let bestA = validActions[0], bestQ = -Infinity;
+            for (const a of validActions) {
+                if (qValues[a] > bestQ) { bestQ = qValues[a]; bestA = a; }
+            }
+            return { value: bestQ, action: bestA };
+        }
+
+        let bestValue = -Infinity;
+        let bestAction = validActions[0];
+
+        for (const action of validActions) {
+            // 환경 복제 후 시뮬레이션 (타일 스폰 포함)
+            const simEnv = new Game2048();
+            simEnv.board = board.map(r => [...r]);
+            simEnv.done = false;
+            const { reward, done } = simEnv.step(action);
+            const r = scaleReward(reward);
+
+            let value;
+            if (done) {
+                value = r;
+            } else {
+                const child = this._treeSearch(simEnv.board, depth - 1);
+                value = r + this.cfg.gamma * child.value;
+            }
+
+            if (value > bestValue) {
+                bestValue = value;
+                bestAction = action;
+            }
+        }
+
+        return { value: bestValue, action: bestAction };
+    }
+
+    // Tree search로 행동 선택 (epsilon 탐험 유지)
+    _selectAction(state, validActions) {
+        if (Math.random() < this.epsilon) {
+            const action = validActions[Math.floor(Math.random() * validActions.length)];
+            return { action, qValues: this.model.forward(state) };
+        }
+        const result = this._treeSearch(state, this.searchDepth);
+        return { action: result.action, qValues: this.model.forward(state) };
+    }
+
+    // 1-step TD + D4 증강 학습
+    _learnStep(state, action, reward, nextState, done) {
+        const trainItems = [];
+        for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+            const augState = augmentBoard(state, rotK, flip);
+            const augAction = actionMap[action];
+            let target = scaleReward(reward);
+            if (!done) {
+                const augNext = augmentBoard(nextState, rotK, flip);
+                const qNext = this.model.forward(augNext);
+                target += this.cfg.gamma * Math.max(...qNext);
+            }
+            trainItems.push({ state: augState, action: augAction, target });
+        }
+        let totalLoss = 0;
+        for (const item of trainItems) {
+            this.model.forward(item.state);
+            totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+        }
+        return totalLoss / 8;
+    }
+
+    async _trainOne(env) {
+        const losses = [];
+        let state = env.reset();
+        let stepNum = 0;
+
+        while (!env.done && !this.aborted) {
+            const validActions = env.getValidActions();
+            const { action, qValues } = this._selectAction(state, validActions);
+            const { state: nextState, reward, done } = env.step(action);
+
+            // 1-step TD 학습
+            const loss = this._learnStep(state.map(r => [...r]), action, reward, nextState, done);
+            losses.push(loss);
+
+            // 갈 수 없는 방향: target = INVALID
+            for (let a = 0; a < 4; a++) {
+                if (!validActions.includes(a)) {
+                    this.model.forward(state);
+                    this.model.backward(a, INVALID_ACTION_TARGET, this.cfg.learningRate);
+                }
+            }
+
+            if (this.onStep) this.onStep({ stepNum, state, action, reward, loss, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
+
+            state = nextState;
+            stepNum++;
+
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        // 게임오버 보드 표시
+        if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
+        await new Promise(r => setTimeout(r, 0));
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
     }
