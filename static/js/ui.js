@@ -178,6 +178,7 @@ function readEpsilonConfig() {
         epsilonStart: parseFloat(document.getElementById('inputEpsilonStart').value) || DEFAULT_CONFIG.epsilonStart,
         epsilonEnd: parseFloat(document.getElementById('inputEpsilonEnd').value) || DEFAULT_CONFIG.epsilonEnd,
         epsilonDecay: parseFloat(document.getElementById('inputEpsilonDecay').value) || DEFAULT_CONFIG.epsilonDecay,
+        nStep: parseInt(document.getElementById('inputNStep').value) || DEFAULT_CONFIG.nStep,
     };
 }
 

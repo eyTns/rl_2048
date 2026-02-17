@@ -37,7 +37,7 @@
 
         <!-- Network Graph -->
         <div class="network-section">
-            <h3>신경망 구조 (256 → 256 → 256 → 4)</h3>
+            <h3>신경망 구조 (16 → 256 → 256 → 4)</h3>
             <canvas id="networkCanvas" height="220"></canvas>
         </div>
 
@@ -54,6 +54,7 @@
             <button id="btnTD">TD 학습</button>
             <button id="btnMC">MC 학습</button>
             <label>n=<input type="number" id="inputN" value="9999" min="1" max="10000"></label>
+            <label>k-step<input type="number" id="inputNStep" value="2" min="1" max="10" step="1"></label>
             <label><input type="checkbox" id="chkCurriculum"> 커리큘럼</label>
             <button id="btnStop" class="accent" disabled>중지</button>
             <div class="sep"></div>

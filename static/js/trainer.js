@@ -8,6 +8,7 @@ const DEFAULT_CONFIG = {
     epsilonStart: 0.05,
     epsilonEnd: 0.0001,
     epsilonDecay: 0.99,
+    nStep: 2,
 };
 
 const INVALID_ACTION_TARGET = -10;
@@ -66,45 +67,65 @@ class TDTrainer {
         }
     }
 
+    // k-step return: G = r_step + γ·r₁ + γ²·r₂ + ... + γᵏ⁻¹·rₖ₋₁ + γᵏ·Q(sₖ, aₖ)
+    // step.reward가 첫 보상, tailRewards가 이후 보상들, 끝에 bootstrap Q값
+    _kStepTarget(stepReward, tailRewards, bootstrapState, bootstrapAction, augRotK, augFlip, augActionMap) {
+        let G = scaleReward(stepReward);
+        for (let i = 0; i < tailRewards.length; i++) {
+            G += Math.pow(this.cfg.gamma, i + 1) * scaleReward(tailRewards[i]);
+        }
+        // bootstrap: 게임이 끝나지 않았으면 Q(s', a') 추가
+        if (bootstrapAction >= 0) {
+            const augState = augmentBoard(bootstrapState, augRotK, augFlip);
+            const augAction = augActionMap[bootstrapAction];
+            const qNext = this.model.forward(augState)[augAction];
+            G += Math.pow(this.cfg.gamma, tailRewards.length + 1) * qNext;
+        }
+        return G;
+    }
+
+    // D4 증강 + 학습
+    _learnWithAugmentation(step, tailRewards, bootstrapState, bootstrapAction) {
+        const trainItems = [];
+        for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+            const augState = augmentBoard(step.state, rotK, flip);
+            const augAction = actionMap[step.action];
+            const target = this._kStepTarget(step.reward, tailRewards, bootstrapState, bootstrapAction, rotK, flip, actionMap);
+            trainItems.push({ state: augState, action: augAction, target });
+        }
+        let totalLoss = 0;
+        for (const item of trainItems) {
+            this.model.forward(item.state);
+            totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
+        }
+        return totalLoss / 8;
+    }
+
     async _trainOne(env) {
         const losses = [];
+        const k = this.cfg.nStep;
+        const buffer = [];  // { state, action, reward }
         let state = env.reset();
         let stepNum = 0;
-        let prevStep = null;
 
         while (!env.done && !this.aborted) {
             const validActions = env.getValidActions();
             const { action, qValues } = this.model.getAction(state, validActions, this.epsilon);
             const { state: nextState, reward, done } = env.step(action);
 
-            // SARSA: 이전 스텝 학습 — target = √r + γ * Q(s', a')
-            if (prevStep) {
-                const r = scaleReward(prevStep.reward);
-                // D4 대칭 8배 증강
-                const trainItems = [];
-                for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
-                    const augPrev = augmentBoard(prevStep.state, rotK, flip);
-                    const augPrevAction = actionMap[prevStep.action];
-                    let target;
-                    if (done) {
-                        target = r;
-                    } else {
-                        const augCurr = augmentBoard(state, rotK, flip);
-                        const augCurrAction = actionMap[action];
-                        const qNext = this.model.forward(augCurr)[augCurrAction];
-                        target = r + this.cfg.gamma * qNext;
-                    }
-                    trainItems.push({ state: augPrev, action: augPrevAction, target });
-                }
-                let totalLoss = 0;
-                for (const item of trainItems) {
-                    this.model.forward(item.state);
-                    totalLoss += this.model.backward(item.action, item.target, this.cfg.learningRate);
-                }
-                losses.push(totalLoss / 8);
+            buffer.push({ state: state.map(r => [...r]), action, reward });
+
+            // 버퍼에 k+1개 쌓이면 가장 오래된 스텝 학습
+            // buffer 마지막 항목의 (state, action)으로 bootstrap
+            if (buffer.length > k) {
+                const step = buffer.shift();
+                const last = buffer[buffer.length - 1];
+                const tailRewards = buffer.slice(0, -1).map(s => s.reward);
+                const loss = this._learnWithAugmentation(step, tailRewards, last.state, last.action);
+                losses.push(loss);
             }
 
-            // 갈 수 없는 방향: target = 0
+            // 갈 수 없는 방향: target = INVALID
             for (let a = 0; a < 4; a++) {
                 if (!validActions.includes(a)) {
                     this.model.forward(state);
@@ -114,7 +135,6 @@ class TDTrainer {
 
             if (this.onStep) this.onStep({ stepNum, state, action, reward, loss: losses[losses.length - 1] || null, qValues, validActions, done, score: env.score, maxTile: env.getMaxTile() });
 
-            prevStep = { state: state.map(r => [...r]), action, reward };
             state = nextState;
             stepNum++;
 
@@ -125,10 +145,12 @@ class TDTrainer {
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
 
-        // 마지막 스텝: 게임오버 → Q target = 0
-        if (prevStep) {
-            this.model.forward(prevStep.state);
-            losses.push(this.model.backward(prevStep.action, 0, this.cfg.learningRate));
+        // drain: 게임 끝났으므로 bootstrap 없이, 남은 보상만으로 학습
+        while (buffer.length > 0) {
+            const step = buffer.shift();
+            const tailRewards = buffer.map(s => s.reward);
+            const loss = this._learnWithAugmentation(step, tailRewards, null, -1);
+            losses.push(loss);
         }
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
