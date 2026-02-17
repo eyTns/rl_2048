@@ -122,11 +122,12 @@ class QNetwork {
     }
 
     _preprocessInto(board, x) {
-        // board: 4x4 array → x[1][16] log2 인코딩 (in-place)
+        // board: 4x4 array → x[1][16] 정규화 log2 인코딩 (in-place)
+        // 0→0, 2→1/16, 4→2/16, ..., 65536→1
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
                 const v = board[i][j];
-                x[0][i * 4 + j] = v > 0 ? Math.log2(v) : 0;
+                x[0][i * 4 + j] = v > 0 ? Math.log2(v) / 16 : 0;
             }
     }
 
