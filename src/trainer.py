@@ -218,19 +218,22 @@ class BaseTrainer:
 
 
 class TDTrainer(BaseTrainer):
-    """SARSA 학습기: target = ln(r) + γ * Q(s', a')"""
+    """SARSA 학습기: 에피소드 단위 target network 사용"""
 
     def __init__(self, config: TrainConfig):
         config.method = "td"
         super().__init__(config)
         self.gamma = config.gamma
+        # 에피소드 시작 시 고정되는 target network
+        self.target_model = QNetwork(hidden_size=config.hidden_size)
+        self.model.copy_weights_to(self.target_model)
 
     def _scale_reward(self, reward: float) -> float:
         """보상 스케일링: √reward"""
         return float(np.sqrt(reward))
 
     def _on_step(self, step: Step, episode: list[Step]) -> float | None:
-        """SARSA: 1스텝 지연 학습"""
+        """SARSA: 1스텝 지연 학습 (target network로 Q(s',a') 계산)"""
         if len(episode) < 2:
             return None
 
@@ -238,23 +241,11 @@ class TDTrainer(BaseTrainer):
         curr_step = episode[-1]
         r = self._scale_reward(prev_step.reward)
 
-        # D4 대칭 8배 증강 비활성화 — 학습 성능 저하 의심
-        # train_items = []
-        # for rot_k, flip, action_map in BOARD_AUGMENTATIONS:
-        #     aug_curr = _augment_board(curr_step.state, rot_k, flip)
-        #     aug_curr_action = action_map[curr_step.action]
-        #     q_next = float(self.model.forward(aug_curr)[aug_curr_action])
-        #     target = r + self.gamma * q_next
-        #
-        #     aug_prev = _augment_board(prev_step.state, rot_k, flip)
-        #     aug_prev_action = action_map[prev_step.action]
-        #     train_items.append((aug_prev, aug_prev_action, target))
-
-        # 원본만 사용
         if curr_step.done:
             target = r
         else:
-            q_next = float(self.model.forward(curr_step.state)[curr_step.action])
+            # target network로 Q(s',a') 계산 → 에피소드 내 고정
+            q_next = float(self.target_model.forward(curr_step.state)[curr_step.action])
             target = r + self.gamma * q_next
 
         self.model.forward(prev_step.state)
@@ -263,16 +254,18 @@ class TDTrainer(BaseTrainer):
         return total_loss
 
     def _on_episode_end(self, episode: list[Step]) -> list[float]:
-        """마지막 스텝 학습: 게임오버 → Q target = 0"""
-        if not episode:
-            return []
-        last_step = episode[-1]
+        """마지막 스텝 학습 + target network 동기화"""
+        losses = []
+        if episode:
+            last_step = episode[-1]
+            self.model.forward(last_step.state)
+            loss = self.model.backward(last_step.action, 0.0, self.lr)
+            losses.append(loss)
 
-        # 원본만 사용
-        self.model.forward(last_step.state)
-        total_loss = self.model.backward(last_step.action, 0.0, self.lr)
+        # 에피소드 끝에 target network를 main network로 동기화
+        self.model.copy_weights_to(self.target_model)
 
-        return [total_loss]
+        return losses
 
 
 class MCTrainer(BaseTrainer):
