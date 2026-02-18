@@ -79,6 +79,16 @@ const testCode = `
     });
 
     console.log('');
+    console.log('=== TSTrainer ===');
+    const ts = new TSTrainer(net, {epsilonStart: 0.5, searchDepth: 2});
+    let tsSteps = 0;
+    ts.onStep = () => tsSteps++;
+    await ts.trainEpisodes(new Game2048(), 1, r => {
+        console.log('  episode: steps=' + r.steps + ' score=' + r.score + ' maxTile=' + r.maxTile);
+    });
+    console.log('  onStep count: ' + tsSteps);
+
+    console.log('');
     console.log('ALL PASSED');
 })();
 `;

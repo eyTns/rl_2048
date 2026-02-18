@@ -37,7 +37,7 @@
 
         <!-- Network Graph -->
         <div class="network-section">
-            <h3>신경망 구조 (256 → 256 → 256 → 4)</h3>
+            <h3>신경망 구조 (32 → 256 → 256 → 4)</h3>
             <canvas id="networkCanvas" height="220"></canvas>
         </div>
 
@@ -53,10 +53,13 @@
             <div class="sep"></div>
             <button id="btnTD">TD 학습</button>
             <button id="btnMC">MC 학습</button>
+            <button id="btnTS">TS 학습</button>
             <label>n=<input type="number" id="inputN" value="9999" min="1" max="10000"></label>
+            <label>탐색 깊이<input type="number" id="inputSearchDepth" value="2" min="1" max="5" step="1"></label>
             <label><input type="checkbox" id="chkCurriculum"> 커리큘럼</label>
             <button id="btnStop" class="accent" disabled>중지</button>
             <div class="sep"></div>
+            <label>γ<input type="number" id="inputGamma" value="0.999" min="0" max="1" step="0.001"></label>
             <label>α<input type="number" id="inputLearningRate" value="0.0001" min="0.00001" max="0.01" step="0.00001"></label>
             <label>ε시작<input type="number" id="inputEpsilonStart" value="0.05" min="0" max="1" step="0.01"></label>
             <label>ε감쇠<input type="number" id="inputEpsilonDecay" value="0.99" min="0" max="1" step="0.001"></label>

@@ -2,8 +2,7 @@
 // QNetwork JS 포팅
 // ============================================================
 
-const NUM_CHANNELS = 16;  // 원핫 채널 수: exponent 1~16 (2^1 ~ 2^16)
-const INPUT_SIZE = 4 * 4 * NUM_CHANNELS;  // 256 (16셀 × 16채널)
+const INPUT_SIZE = 4 * 4 * 2;  // 32 (셀당 2채널: 존재 여부 + 정규화 log2)
 const GRAD_NORM_LIMIT = 1.0;
 const HUBER_DELTA = 1.0;
 
@@ -123,17 +122,15 @@ class QNetwork {
     }
 
     _preprocessInto(board, x) {
-        // board: 4x4 array → x[1][256] 원핫 인코딩 (in-place)
-        x[0].fill(0);
+        // board: 4x4 array → x[1][32] 투채널 인코딩 (in-place)
+        // 채널1 [0..15]: 타일 존재 여부 (0 또는 1)
+        // 채널2 [16..31]: 정규화 log2 값 (0→0, 2→1/16, ..., 65536→1)
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
+                const idx = i * 4 + j;
                 const v = board[i][j];
-                if (v > 0) {
-                    const exp = Math.log2(v);  // 2→1, 4→2, ..., 65536→16
-                    const cell = i * 4 + j;
-                    if (exp >= 1 && exp <= NUM_CHANNELS)
-                        x[0][cell * NUM_CHANNELS + exp - 1] = 1.0;
-                }
+                x[0][idx] = v > 0 ? 1 : 0;
+                x[0][idx + 16] = v > 0 ? Math.log2(v) / 16 : 0;
             }
     }
 
@@ -247,6 +244,16 @@ class QNetwork {
             if (q[a] > bestQ) { bestQ = q[a]; bestA = a; }
         }
         return { action: bestA, qValues: q };
+    }
+
+    copyWeightsTo(other) {
+        // 가중치 깊은 복사: main → target network 동기화용
+        for (let i = 0; i < this.w1.length; i++) other.w1[i].set(this.w1[i]);
+        other.b1.set(this.b1);
+        for (let i = 0; i < this.w2.length; i++) other.w2[i].set(this.w2[i]);
+        other.b2.set(this.b2);
+        for (let i = 0; i < this.w3.length; i++) other.w3[i].set(this.w3[i]);
+        other.b3.set(this.b3);
     }
 
     toJSON() {

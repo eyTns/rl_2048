@@ -184,6 +184,15 @@ class QNetwork:
 
         return int(np.argmax(masked_q))
 
+    def copy_weights_to(self, other: "QNetwork"):
+        """가중치를 다른 네트워크에 복사 (target network용)"""
+        other.w1 = self.w1.copy()
+        other.b1 = self.b1.copy()
+        other.w2 = self.w2.copy()
+        other.b2 = self.b2.copy()
+        other.w3 = self.w3.copy()
+        other.b3 = self.b3.copy()
+
     def save(self, path: str):
         """모델 저장"""
         np.savez(

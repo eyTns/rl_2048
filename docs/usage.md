@@ -74,26 +74,33 @@ trainer.train(episodes=1000, print_every=500)
 config = TrainConfig(method='mc')
 trainer = create_trainer(config)
 trainer.train(episodes=1000, print_every=500)
+
+# Tree Search 학습
+config = TrainConfig(method='ts', search_depth=2)
+trainer = create_trainer(config)
+trainer.train(episodes=100, print_every=20)
 ```
 
 ### 설정 옵션 (TrainConfig)
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
-| `method` | `'td'` | 학습 방식: `'td'` (SARSA) 또는 `'mc'` |
-| `gamma` | `0.9999` | 할인율 (TD, MC 공통) |
+| `method` | `'td'` | 학습 방식: `'td'` (SARSA), `'mc'`, `'ts'` (Tree Search) |
+| `gamma` | `0.9999` | 할인율 (공통) |
 | `learning_rate` | `0.001` | 학습률 |
 | `epsilon_start` | `0.05` | 초기 탐험률 |
 | `epsilon_end` | `0.0001` | 최소 탐험률 |
 | `epsilon_decay` | `0.99` | 탐험률 감소율 |
 | `hidden_size` | `256` | 은닉층 크기 |
+| `search_depth` | `2` | TS용: tree search 깊이 |
 
-### TD (SARSA) vs Monte Carlo
+### TD (SARSA) vs Monte Carlo vs Tree Search
 
 | 방식 | 학습 시점 | 타겟 계산 | 특징 |
 |------|----------|----------|------|
-| TD (SARSA) | 매 스텝 | `√r + γ × Q(s', a')` | 빠른 학습, 실제 다음 행동 사용 |
+| TD (SARSA) | 매 스텝 | `√r + γ × Q(s', a')` | 빠른 학습, target network 사용 |
 | MC | 에피소드 끝 | `G = √r + γ × G` (할인 누적) | γ 할인 적용, 분산 큼 |
+| TS | 매 스텝 | TD(0)로 학습 | k-step tree search로 행동 선택, target network 사용 |
 
 **공통 적용 기법:**
 - **보상 스케일링**: √score (큰 합병 보상을 압축하여 안정적 학습)
@@ -151,7 +158,7 @@ state = env.reset(curriculum_mode=False)  # 이번 판만 일반 모드
                     ↓
 ┌──────────────────────────────────────────────┐
 │          QNetwork (NumPy 기반)               │
-│  - 입력: 4x4 보드 → 정규화 지수 (16차원)      │
+│  - 입력: 4x4 보드 → 투채널 인코딩 (32차원)     │
 │  - 은닉층: ReLU × 2 (256)                    │
 │  - 출력: 4개 Q값                             │
 │  - 손실: Huber Loss (δ=1.0)                  │
@@ -161,16 +168,14 @@ state = env.reset(curriculum_mode=False)  # 이번 판만 일반 모드
 ┌──────────────────────────────────────────────┐
 │            BaseTrainer                       │
 │  - train_one_episode()                       │
-│  - D4 대칭 증강 (8배)                        │
 │  - 보상 스케일링 (√score)                    │
 │  - 콜백 지원                                 │
 └──────────────────────────────────────────────┘
-         ↙                    ↘
-┌──────────────────┐    ┌──────────────────┐
-│  TDTrainer       │    │  MCTrainer       │
-│  (SARSA)         │    │  에피소드 끝     │
-│  스텝마다 학습   │    │  gamma 할인 적용 │
-│  gamma 적용      │    │  D4 증강 적용    │
-│  D4 증강 적용    │    │                  │
-└──────────────────┘    └──────────────────┘
+      ↙            ↓              ↘
+┌────────────┐ ┌────────────┐ ┌────────────┐
+│ TDTrainer  │ │ MCTrainer  │ │ TSTrainer  │
+│ (SARSA)    │ │ 에피소드끝 │ │ TreeSearch │
+│ 스텝 학습  │ │ gamma 할인 │ │ k-step 탐색│
+│ target net │ │ D4 증강    │ │ target net │
+└────────────┘ └────────────┘ └────────────┘
 ```

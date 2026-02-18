@@ -11,17 +11,17 @@
 
 | 항목 | 현재 (ml_app.html) | 권장 | 비고 |
 |------|-------------------|------|------|
-| γ (gamma) | 0.9999 | 0.99 | 2048은 장기 계획 필수이나, 0.9999는 발산 위험. 0.99가 안정적 |
-| α (learning rate) | 0.001 | 5e-5 ~ 1e-4 | 현재 값은 10~20배 높음. 학습 불안정의 주원인 |
+| γ (gamma) | 0.999 | 0.99 | 0.9999에서 변경됨. 0.99가 더 안정적일 수 있음 |
+| α (learning rate) | 0.0001 | 5e-5 ~ 1e-4 | 권장 범위 내로 조정 완료 |
 | ε 시작 | 0.05 | 0.9 ~ 1.0 | 초기에 충분한 탐험 필요 |
 | ε 최소 | 0.0001 | 0.01 | 너무 낮으면 exploitation에 갇힘 |
 | ε 감쇠 | 0.99 (에피소드당) | 0.9999 (에피소드당) | 현재: 100 에피소드면 ε≈0.37. 권장: 10,000 에피소드면 ε≈0.37 |
 | Replay Buffer | 없음 | 10,000 ~ 50,000 | 샘플 간 상관관계를 끊어 학습 안정화 |
-| Target Network | 없음 | 1,000 ~ 2,000 step마다 복사 | Q함수 업데이트 안정화 |
-| 리워드 함수 | √(reward) | log₂(merged_value) | 기하급수적 성장 억제 |
-| Invalid Move | 페널티 없음 | -0.1 또는 -10 | 유효하지 않은 이동 빠르게 교정 |
-| One-Hot Encoding | 구현됨 (16채널) | 구현 필요 | OK |
-| D4 대칭 증강 | 코드 있으나 비활성 | 8배 증강 | 재활성화 필요 |
+| Target Network | 에피소드 단위 동기화 | 1,000 ~ 2,000 step마다 복사 | 구현 완료. step 단위 동기화는 미적용 |
+| 리워드 함수 | log₂(reward) | log₂(merged_value) | 적용 완료 |
+| Invalid Move | -10 | -0.1 또는 -10 | 적용 완료 |
+| 투채널 인코딩 | 구현됨 (2채널) | 구현됨 (2채널) | 적용 완료 |
+| D4 대칭 증강 | 8배 증강 활성 | 8배 증강 | 적용 완료 |
 
 ---
 
@@ -73,41 +73,32 @@ Q(s, a) ← Q(s, a) + α [ r + γ max_a' Q_target(s', a') - Q(s, a) ]
 
 HTML 파일에서 직접 실험. 한 번에 하나씩 변경하여 효과 측정.
 
-### 실험 1: 하이퍼파라미터 조정 (코드 변경 최소)
+### 실험 1: 하이퍼파라미터 조정 — 적용 완료
 
-UI 컨트롤에서 바로 변경 가능한 항목:
+gamma: 0.999, learningRate: 0.0001로 변경됨. UI에서 추가 조정 가능.
 
+미적용 항목 (UI에서 조정하여 실험):
 ```
 ε 시작: 0.05 → 0.9
 ε 감쇠: 0.99 → 0.9999
 ε 최소: 0.0001 → 0.01
 ```
 
-코드 수정 필요:
-```javascript
-// DEFAULT_CONFIG 변경
-gamma: 0.9999 → 0.99
-learningRate: 0.001 → 0.0001
-```
-
-### 실험 2: 리워드 함수 변경
+### 실험 2: 리워드 함수 변경 — 적용 완료
 
 ```javascript
-// 현재: √(reward)
+// 현재 적용된 코드
 function scaleReward(reward) {
-    return Math.sqrt(reward);
-}
-
-// 변경: log₂ 방식
-function scaleReward(reward) {
-    return reward > 0 ? Math.log2(reward) : 0;
+    return reward > 0 ? Math.log2(reward) : -1;
 }
 ```
 
-### 실험 3: D4 대칭 증강 재활성화
+머지 없는 이동은 -1 반환.
 
-TDTrainer와 MCTrainer에서 주석 해제.
-현재 "학습 성능 저하 의심"으로 비활성화되어 있으나, 다른 하이퍼파라미터가 수정된 후 재시도 가치 있음.
+### 실험 3: D4 대칭 증강 — 적용 완료
+
+TD, MC, TS 전 트레이너에서 8배 증강 활성화됨.
+Invalid action에도 증강 8개 state 전부에 -10 학습 적용.
 
 ### 실험 4: Replay Buffer 구현
 
@@ -134,20 +125,20 @@ class ReplayBuffer {
 }
 ```
 
-### 실험 5: Target Network 구현
+### 실험 5: Target Network — 적용 완료
+
+에피소드 단위로 target network를 main network에서 동기화.
+TD, TS 트레이너에서 Q(s') 계산 시 target network 사용.
 
 ```javascript
-// 메인 네트워크와 동일 구조의 타겟 네트워크
-let targetModel = QNetwork.fromJSON(model.toJSON());
+// 에피소드 끝에 동기화
+this.model.copyWeightsTo(this.targetModel);
 
-// C 스텝(1000~2000)마다 동기화
-if (totalSteps % TARGET_UPDATE_FREQ === 0) {
-    targetModel = QNetwork.fromJSON(model.toJSON());
-}
-
-// 타겟 계산 시 targetModel 사용
-const target = r + gamma * Math.max(...targetModel.forward(nextState));
+// 학습 시 target network로 Q(s') 계산
+const qNext = this.targetModel.forward(augNext);
 ```
+
+미적용: step 단위 동기화 (1,000~2,000 step마다). 에피소드 단위가 충분한지 실험 필요.
 
 ---
 

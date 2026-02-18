@@ -71,7 +71,7 @@ function drawNetwork() {
     const layers = [16, 16, 16, 4];  // 표시 노드 수
     const layerLabels = ['입력', '은닉1', '은닉2', '출력'];
     const weights = [model.w1, model.w2, model.w3];
-    const groupSizes = [1, 16, 16, 1];  // 그룹당 실제 뉴런 수
+    const groupSizes = [2, 16, 16, 1];  // 표시노드당 실제 뉴런 수 (입력: 셀당 2채널)
     const pad = 40;
     const layerX = layers.map((_, i) => pad + i * (w - 2 * pad) / (layers.length - 1));
 
@@ -83,13 +83,16 @@ function drawNetwork() {
         return (h - 20) / 2 - totalH / 2 + nodeIdx * spacing;
     };
 
-    // 연결선
+    // 연결선: 레이어별 그룹 평균 가중치 계산 후, 레이어별 최댓값 기준으로 정규화
+    const edgeData = [];  // [{ li, si, di, avg }]
+    const layerMaxAbs = [];  // 레이어별 |avg| 최댓값
+
     for (let li = 0; li < weights.length; li++) {
         const W_mat = weights[li];
         const srcN = layers[li], dstN = layers[li + 1];
         const srcGroup = groupSizes[li], dstGroup = groupSizes[li + 1];
+        let maxAbs = 0;
 
-        // 그룹 간 평균 가중치 계산
         for (let si = 0; si < srcN; si++) {
             for (let di = 0; di < dstN; di++) {
                 let sum = 0, count = 0;
@@ -105,20 +108,29 @@ function drawNetwork() {
                 }
                 if (count === 0) continue;
                 const avg = sum / count;
+                edgeData.push({ li, si, di, avg });
                 const absAvg = Math.abs(avg);
-                const thickness = Math.min(3, absAvg * 8);
-                if (thickness < 0.1) continue;
-
-                ctx.beginPath();
-                ctx.moveTo(layerX[li], nodeY(li, si));
-                ctx.lineTo(layerX[li + 1], nodeY(li + 1, di));
-                ctx.strokeStyle = avg > 0
-                    ? `rgba(59, 130, 246, ${Math.min(0.8, absAvg * 4)})`   // 파랑
-                    : `rgba(239, 68, 68, ${Math.min(0.8, absAvg * 4)})`;    // 빨강
-                ctx.lineWidth = thickness;
-                ctx.stroke();
+                if (absAvg > maxAbs) maxAbs = absAvg;
             }
         }
+        layerMaxAbs.push(maxAbs || 1);
+    }
+
+    // 엣지 그리기: 각 레이어의 maxAbs 기준으로 정규화
+    for (const { li, si, di, avg } of edgeData) {
+        const norm = Math.abs(avg) / layerMaxAbs[li];  // 0~1
+        if (norm < 0.02) continue;
+        const thickness = Math.min(3, norm * 3);
+        const alpha = Math.min(0.8, norm * 0.8);
+
+        ctx.beginPath();
+        ctx.moveTo(layerX[li], nodeY(li, si));
+        ctx.lineTo(layerX[li + 1], nodeY(li + 1, di));
+        ctx.strokeStyle = avg > 0
+            ? `rgba(59, 130, 246, ${alpha})`   // 파랑
+            : `rgba(239, 68, 68, ${alpha})`;    // 빨강
+        ctx.lineWidth = thickness;
+        ctx.stroke();
     }
 
     // 노드
@@ -160,12 +172,14 @@ function onEpisodeUI(result) {
 }
 
 // --- 설정 읽기 ---
-function readEpsilonConfig() {
+function readConfig() {
     return {
+        gamma: parseFloat(document.getElementById('inputGamma').value) || DEFAULT_CONFIG.gamma,
         learningRate: parseFloat(document.getElementById('inputLearningRate').value) || DEFAULT_CONFIG.learningRate,
         epsilonStart: parseFloat(document.getElementById('inputEpsilonStart').value) || DEFAULT_CONFIG.epsilonStart,
         epsilonEnd: parseFloat(document.getElementById('inputEpsilonEnd').value) || DEFAULT_CONFIG.epsilonEnd,
         epsilonDecay: parseFloat(document.getElementById('inputEpsilonDecay').value) || DEFAULT_CONFIG.epsilonDecay,
+        searchDepth: parseInt(document.getElementById('inputSearchDepth').value) || DEFAULT_CONFIG.searchDepth,
     };
 }
 
@@ -183,7 +197,7 @@ document.getElementById('btnNewModel').addEventListener('click', () => {
     initGrid();
     drawNetwork();
     // 에피소드/epsilon 초기화 표시
-    updateInfo({ episode: 0, epsilon: readEpsilonConfig().epsilonStart, score: 0, step: 0, reward: 0, maxTile: 0 });
+    updateInfo({ episode: 0, epsilon: readConfig().epsilonStart, score: 0, step: 0, reward: 0, maxTile: 0 });
     updateQBars([0, 0, 0, 0], -1);
 });
 
@@ -278,7 +292,7 @@ document.getElementById('btnTD').addEventListener('click', async () => {
     const curriculum = document.getElementById('chkCurriculum').checked;
     setStatus(`TD 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     env = new Game2048(curriculum);
-    const trainer = new TDTrainer(model, readEpsilonConfig());
+    const trainer = new TDTrainer(model, readConfig());
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
@@ -298,7 +312,7 @@ document.getElementById('btnMC').addEventListener('click', async () => {
     const curriculum = document.getElementById('chkCurriculum').checked;
     setStatus(`MC 학습 중... (0/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     env = new Game2048(curriculum);
-    const trainer = new MCTrainer(model, readEpsilonConfig());
+    const trainer = new MCTrainer(model, readConfig());
     trainer.onStep = onStepUI;
     activeTrainer = trainer;
     await trainer.trainEpisodes(env, n, (result) => {
@@ -306,6 +320,27 @@ document.getElementById('btnMC').addEventListener('click', async () => {
         setStatus(`MC 학습 중... (${result.episode}/${n})${curriculum ? ' [커리큘럼]' : ''}`);
     });
     const msg = trainer.aborted ? `MC 학습 중단 · ${trainer.episodeCount}게임` : `MC 학습 완료 · ${n}게임`;
+    setStatus(msg);
+    activeTrainer = null;
+    setRunning(false);
+});
+
+document.getElementById('btnTS').addEventListener('click', async () => {
+    if (running) return;
+    setRunning(true);
+    const n = parseInt(document.getElementById('inputN').value) || 1;
+    const curriculum = document.getElementById('chkCurriculum').checked;
+    const cfg = readConfig();
+    setStatus(`TS 학습 중... (0/${n}) [depth=${cfg.searchDepth}]${curriculum ? ' [커리큘럼]' : ''}`);
+    env = new Game2048(curriculum);
+    const trainer = new TSTrainer(model, cfg);
+    trainer.onStep = onStepUI;
+    activeTrainer = trainer;
+    await trainer.trainEpisodes(env, n, (result) => {
+        onEpisodeUI(result);
+        setStatus(`TS 학습 중... (${result.episode}/${n}) [depth=${cfg.searchDepth}]${curriculum ? ' [커리큘럼]' : ''}`);
+    });
+    const msg = trainer.aborted ? `TS 학습 중단 · ${trainer.episodeCount}게임` : `TS 학습 완료 · ${n}게임`;
     setStatus(msg);
     activeTrainer = null;
     setRunning(false);

@@ -2,6 +2,11 @@
 
 # Reinforcement Learning Study Notes
 
+## 프로젝트 컨텍스트
+
+주된 작업 코드는 `static/` 디렉토리의 HTML/JS 코드이며, Python(`src/`)은 작업 대상이 아니다.
+RL 학습 로직의 기준 구현은 `static/js/trainer.js`와 `static/js/qnetwork.js`이다.
+
 ## 기본 개념
 - **State (상태)**: 현재 환경의 상황 (2048에서는 4x4 보드의 16개 숫자)
 - **Action (행동)**: 에이전트가 취할 수 있는 선택 (2048에서는 상/하/좌/우)
