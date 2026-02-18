@@ -71,7 +71,7 @@ function drawNetwork() {
     const layers = [16, 16, 16, 4];  // 표시 노드 수
     const layerLabels = ['입력', '은닉1', '은닉2', '출력'];
     const weights = [model.w1, model.w2, model.w3];
-    const groupSizes = [1, 16, 16, 1];  // 표시노드당 실제 뉴런 수
+    const groupSizes = [2, 16, 16, 1];  // 표시노드당 실제 뉴런 수 (입력: 셀당 2채널)
     const pad = 40;
     const layerX = layers.map((_, i) => pad + i * (w - 2 * pad) / (layers.length - 1));
 

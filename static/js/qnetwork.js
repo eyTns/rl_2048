@@ -2,7 +2,7 @@
 // QNetwork JS 포팅
 // ============================================================
 
-const INPUT_SIZE = 4 * 4;  // 16 (각 셀의 log2 값)
+const INPUT_SIZE = 4 * 4 * 2;  // 32 (셀당 2채널: 존재 여부 + 정규화 log2)
 const GRAD_NORM_LIMIT = 1.0;
 const HUBER_DELTA = 1.0;
 
@@ -122,12 +122,15 @@ class QNetwork {
     }
 
     _preprocessInto(board, x) {
-        // board: 4x4 array → x[1][16] 정규화 log2 인코딩 (in-place)
-        // 0→0, 2→1/16, 4→2/16, ..., 65536→1
+        // board: 4x4 array → x[1][32] 투채널 인코딩 (in-place)
+        // 채널1 [0..15]: 타일 존재 여부 (0 또는 1)
+        // 채널2 [16..31]: 정규화 log2 값 (0→0, 2→1/16, ..., 65536→1)
         for (let i = 0; i < 4; i++)
             for (let j = 0; j < 4; j++) {
+                const idx = i * 4 + j;
                 const v = board[i][j];
-                x[0][i * 4 + j] = v > 0 ? Math.log2(v) / 16 : 0;
+                x[0][idx] = v > 0 ? 1 : 0;
+                x[0][idx + 16] = v > 0 ? Math.log2(v) / 16 : 0;
             }
     }
 
