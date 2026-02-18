@@ -3,7 +3,7 @@
 // ============================================================
 
 const DEFAULT_CONFIG = {
-    gamma: 0.9999,
+    gamma: 0.999,
     learningRate: 0.0001,
     epsilonStart: 0.05,
     epsilonEnd: 0.0001,

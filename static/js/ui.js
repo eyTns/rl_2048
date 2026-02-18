@@ -174,6 +174,7 @@ function onEpisodeUI(result) {
 // --- 설정 읽기 ---
 function readConfig() {
     return {
+        gamma: parseFloat(document.getElementById('inputGamma').value) || DEFAULT_CONFIG.gamma,
         learningRate: parseFloat(document.getElementById('inputLearningRate').value) || DEFAULT_CONFIG.learningRate,
         epsilonStart: parseFloat(document.getElementById('inputEpsilonStart').value) || DEFAULT_CONFIG.epsilonStart,
         epsilonEnd: parseFloat(document.getElementById('inputEpsilonEnd').value) || DEFAULT_CONFIG.epsilonEnd,
