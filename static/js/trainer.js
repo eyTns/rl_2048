@@ -73,11 +73,22 @@ class TDTrainer {
         for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
             const augState = augmentBoard(state, rotK, flip);
             const augAction = actionMap[action];
-            let target = scaleReward(reward);
-            if (!done) {
+            let target;
+            if (done) {
+                // 게임오버: terminal value = -10
+                target = scaleReward(reward) + this.cfg.gamma * INVALID_ACTION_TARGET;
+            } else {
                 const augNext = augmentBoard(nextState, rotK, flip);
                 const qNext = this.model.forward(augNext);
-                target += this.cfg.gamma * Math.max(...qNext);
+                // augmented nextState에서 valid action만 max
+                const sim = new Game2048();
+                sim.board = augNext.map(r => [...r]);
+                const augValidActions = sim.getValidActions();
+                let maxQ = INVALID_ACTION_TARGET;
+                for (const va of augValidActions) {
+                    if (qNext[va] > maxQ) maxQ = qNext[va];
+                }
+                target = scaleReward(reward) + this.cfg.gamma * maxQ;
             }
             trainItems.push({ state: augState, action: augAction, target });
         }
@@ -103,11 +114,15 @@ class TDTrainer {
             const loss = this._learnStep(state.map(r => [...r]), action, reward, nextState, done);
             losses.push(loss);
 
-            // 갈 수 없는 방향: target = INVALID
-            for (let a = 0; a < 4; a++) {
-                if (!validActions.includes(a)) {
-                    this.model.forward(state);
-                    this.model.backward(a, INVALID_ACTION_TARGET, this.cfg.learningRate);
+            // 갈 수 없는 방향: 증강 8개 state 전부에 -10 학습
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augState = augmentBoard(state, rotK, flip);
+                for (let a = 0; a < 4; a++) {
+                    if (!validActions.includes(a)) {
+                        const augInvalidAction = actionMap[a];
+                        this.model.forward(augState);
+                        this.model.backward(augInvalidAction, INVALID_ACTION_TARGET, this.cfg.learningRate);
+                    }
                 }
             }
 
@@ -176,12 +191,12 @@ class MCTrainer {
         if (this.aborted) return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses: [] };
 
         // Return 계산 (역순) — √reward + gamma 할인
-        // 게임오버 스텝: G = 0 (미래 없음)
+        // 게임오버 스텝: terminal value = -10
         const returns = new Array(episode.length);
-        let G = 0;
+        let G = INVALID_ACTION_TARGET;
         for (let i = episode.length - 1; i >= 0; i--) {
             if (episode[i].done) {
-                G = 0;
+                G = scaleReward(episode[i].reward) + this.cfg.gamma * INVALID_ACTION_TARGET;
             } else {
                 G = scaleReward(episode[i].reward) + this.cfg.gamma * G;
             }
@@ -205,11 +220,15 @@ class MCTrainer {
             }
             losses.push(totalLoss / 8);
 
-            // 갈 수 없는 방향: target = 0
-            for (let a = 0; a < 4; a++) {
-                if (!episode[i].validActions.includes(a)) {
-                    this.model.forward(episode[i].state);
-                    this.model.backward(a, INVALID_ACTION_TARGET, this.cfg.learningRate);
+            // 갈 수 없는 방향: 증강 8개 state 전부에 -10 학습
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augState = augmentBoard(episode[i].state, rotK, flip);
+                for (let a = 0; a < 4; a++) {
+                    if (!episode[i].validActions.includes(a)) {
+                        const augInvalidAction = actionMap[a];
+                        this.model.forward(augState);
+                        this.model.backward(augInvalidAction, INVALID_ACTION_TARGET, this.cfg.learningRate);
+                    }
                 }
             }
         }
@@ -249,7 +268,7 @@ class TSTrainer {
         sim.done = !sim._canMove();
 
         const validActions = sim.getValidActions();
-        if (validActions.length === 0) return { value: 0, action: -1 };
+        if (validActions.length === 0) return { value: INVALID_ACTION_TARGET, action: -1 };
 
         if (depth === 0) {
             // 리프 노드: Q-network로 평가
@@ -274,7 +293,7 @@ class TSTrainer {
 
             let value;
             if (done) {
-                value = r;
+                value = r + this.cfg.gamma * INVALID_ACTION_TARGET;
             } else {
                 const child = this._treeSearch(simEnv.board, depth - 1);
                 value = r + this.cfg.gamma * child.value;
@@ -305,11 +324,22 @@ class TSTrainer {
         for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
             const augState = augmentBoard(state, rotK, flip);
             const augAction = actionMap[action];
-            let target = scaleReward(reward);
-            if (!done) {
+            let target;
+            if (done) {
+                // 게임오버: terminal value = -10
+                target = scaleReward(reward) + this.cfg.gamma * INVALID_ACTION_TARGET;
+            } else {
                 const augNext = augmentBoard(nextState, rotK, flip);
                 const qNext = this.model.forward(augNext);
-                target += this.cfg.gamma * Math.max(...qNext);
+                // augmented nextState에서 valid action만 max
+                const sim = new Game2048();
+                sim.board = augNext.map(r => [...r]);
+                const augValidActions = sim.getValidActions();
+                let maxQ = INVALID_ACTION_TARGET;
+                for (const va of augValidActions) {
+                    if (qNext[va] > maxQ) maxQ = qNext[va];
+                }
+                target = scaleReward(reward) + this.cfg.gamma * maxQ;
             }
             trainItems.push({ state: augState, action: augAction, target });
         }
@@ -335,11 +365,15 @@ class TSTrainer {
             const loss = this._learnStep(state.map(r => [...r]), action, reward, nextState, done);
             losses.push(loss);
 
-            // 갈 수 없는 방향: target = INVALID
-            for (let a = 0; a < 4; a++) {
-                if (!validActions.includes(a)) {
-                    this.model.forward(state);
-                    this.model.backward(a, INVALID_ACTION_TARGET, this.cfg.learningRate);
+            // 갈 수 없는 방향: 증강 8개 state 전부에 -10 학습
+            for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
+                const augState = augmentBoard(state, rotK, flip);
+                for (let a = 0; a < 4; a++) {
+                    if (!validActions.includes(a)) {
+                        const augInvalidAction = actionMap[a];
+                        this.model.forward(augState);
+                        this.model.backward(augInvalidAction, INVALID_ACTION_TARGET, this.cfg.learningRate);
+                    }
                 }
             }
 
