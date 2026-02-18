@@ -230,36 +230,17 @@ class QNetwork {
             b[j] -= lr * db[j];
     }
 
-    getAction(board, validActions, epsilon = 0, gamma = 0.999) {
+    getAction(board, validActions, epsilon = 0) {
         if (!validActions || validActions.length === 0) return { action: 0, qValues: [0, 0, 0, 0] };
+        const q = this.forward(board);
         if (Math.random() < epsilon) {
-            return { action: validActions[Math.floor(Math.random() * validActions.length)], qValues: this.forward(board) };
+            return { action: validActions[Math.floor(Math.random() * validActions.length)], qValues: q };
         }
-        // 1-step lookahead: scaleReward(r) + γ * max Q(s')
-        const values = new Array(4).fill(-Infinity);
-        let bestA = validActions[0], bestV = -Infinity;
+        let bestA = validActions[0], bestQ = -Infinity;
         for (const a of validActions) {
-            const sim = new Game2048();
-            sim.board = board.map(r => [...r]);
-            sim.done = false;
-            const { reward, done } = sim.step(a);
-            const r = scaleReward(reward);
-            let v;
-            if (done) {
-                v = r + gamma * INVALID_ACTION_TARGET;
-            } else {
-                const qNext = this.forward(sim.getState());
-                const nextValid = sim.getValidActions();
-                let maxQ = INVALID_ACTION_TARGET;
-                for (const na of nextValid) {
-                    if (qNext[na] > maxQ) maxQ = qNext[na];
-                }
-                v = r + gamma * maxQ;
-            }
-            values[a] = v;
-            if (v > bestV) { bestV = v; bestA = a; }
+            if (q[a] > bestQ) { bestQ = q[a]; bestA = a; }
         }
-        return { action: bestA, qValues: values };
+        return { action: bestA, qValues: q };
     }
 
     copyWeightsTo(other) {
