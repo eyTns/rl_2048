@@ -7,7 +7,7 @@
 - 반말하지 마시오.
 
 ## 작업 범위
-- Python(`src/`) 작업은 보류한다. 프론트엔드(`static/` 하위의 JS, HTML, CSS) 작업을 우선한다.
+- Python(`src/`) 작업은 보류한다. JavaScript(`static/js/`) 작업을 우선한다.
 
 ## 환경 관리
 - 패키지 관리와 가상환경은 `uv`를 사용한다
