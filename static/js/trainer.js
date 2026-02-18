@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
 const INVALID_ACTION_TARGET = -10;
 
 function scaleReward(reward) {
-    return reward > 0 ? Math.log2(reward) : 0;
+    return reward > 0 ? Math.log2(reward) : -1;
 }
 
 // D4 대칭 그룹: [rot_k, flip, actionMap]
