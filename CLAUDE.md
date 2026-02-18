@@ -16,7 +16,6 @@
 - 개발 의존성 추가: `uv add --dev <package>`
 
 ## 문서 편집 권한
-
 - AI 편집 가능 문서
   - CLAUDE.md
   - docs/usage.md
