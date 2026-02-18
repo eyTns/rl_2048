@@ -3,6 +3,20 @@
 ## 작업 범위
 - Python(`src/`) 작업은 보류한다. JavaScript(`static/js/`) 작업을 우선한다.
 
+## 문서 편집 권한
+
+- AI 편집 가능 문서
+  - CLAUDE.md
+  - docs/usage.md
+  - docs/dqn_experiment_guide.md
+  - docs/reinforcement_learning.md
+  - docs/ml_visualization_plan.md
+- AI 읽기 전용 문서
+  - docs/conventions.md
+  - docs/backlog.md
+  - docs/karpathy-guidelines.md
+- 새 문서 생성 시 1행에 `<!-- AI 수정 가능 -->` 또는 `<!-- 사용자 전용 -->` 표시를 넣는다
+
 ## 문서 작성
 - 문서 항목에 괄호, 덧붙임, 화살표 등을 사용하기 전에 해당 내용이 꼭 필요한지, 다른 맥락에서 이미 표시되었는지 검토한다
 - todo에 있는 목록은 사용자가 직접 수정해야 한다
