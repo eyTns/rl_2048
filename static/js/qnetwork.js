@@ -243,6 +243,16 @@ class QNetwork {
         return { action: bestA, qValues: q };
     }
 
+    copyWeightsTo(other) {
+        // 가중치 깊은 복사: main → target network 동기화용
+        for (let i = 0; i < this.w1.length; i++) other.w1[i].set(this.w1[i]);
+        other.b1.set(this.b1);
+        for (let i = 0; i < this.w2.length; i++) other.w2[i].set(this.w2[i]);
+        other.b2.set(this.b2);
+        for (let i = 0; i < this.w3.length; i++) other.w3[i].set(this.w3[i]);
+        other.b3.set(this.b3);
+    }
+
     toJSON() {
         const to2D = (m) => m.map(r => Array.from(r));
         const to1D = (a) => Array.from(a);

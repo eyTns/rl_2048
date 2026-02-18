@@ -53,6 +53,9 @@ class TDTrainer {
         this.episodeCount = 0;
         this.onStep = null;
         this.aborted = false;
+        // 에피소드 단위 target network: Q(s') 계산 시 사용
+        this.targetModel = new QNetwork(model.hiddenSize);
+        this.model.copyWeightsTo(this.targetModel);
     }
 
     abort() { this.aborted = true; }
@@ -67,7 +70,7 @@ class TDTrainer {
         }
     }
 
-    // 1-step TD + D4 증강 학습
+    // 1-step TD + D4 증강 학습 (target network로 Q(s') 계산)
     _learnStep(state, action, reward, nextState, done) {
         const trainItems = [];
         for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
@@ -79,7 +82,8 @@ class TDTrainer {
                 target = scaleReward(reward) + this.cfg.gamma * INVALID_ACTION_TARGET;
             } else {
                 const augNext = augmentBoard(nextState, rotK, flip);
-                const qNext = this.model.forward(augNext);
+                // target network로 Q(s') 계산 → 에피소드 내 고정
+                const qNext = this.targetModel.forward(augNext);
                 // augmented nextState에서 valid action만 max
                 const sim = new Game2048();
                 sim.board = augNext.map(r => [...r]);
@@ -137,6 +141,9 @@ class TDTrainer {
         // 게임오버 보드 표시
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
+
+        // 에피소드 끝: target network를 main network로 동기화
+        this.model.copyWeightsTo(this.targetModel);
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
     }
@@ -247,6 +254,9 @@ class TSTrainer {
         this.onStep = null;
         this.aborted = false;
         this.searchDepth = this.cfg.searchDepth;
+        // 에피소드 단위 target network: tree search 리프 평가 + TD 타겟 계산용
+        this.targetModel = new QNetwork(model.hiddenSize);
+        this.model.copyWeightsTo(this.targetModel);
     }
 
     abort() { this.aborted = true; }
@@ -271,8 +281,8 @@ class TSTrainer {
         if (validActions.length === 0) return { value: INVALID_ACTION_TARGET, action: -1 };
 
         if (depth === 0) {
-            // 리프 노드: Q-network로 평가
-            const qValues = this.model.forward(board);
+            // 리프 노드: target network로 평가 (에피소드 내 고정)
+            const qValues = this.targetModel.forward(board);
             let bestA = validActions[0], bestQ = -Infinity;
             for (const a of validActions) {
                 if (qValues[a] > bestQ) { bestQ = qValues[a]; bestA = a; }
@@ -318,7 +328,7 @@ class TSTrainer {
         return { action: result.action, qValues: this.model.forward(state) };
     }
 
-    // 1-step TD + D4 증강 학습
+    // 1-step TD + D4 증강 학습 (target network로 Q(s') 계산)
     _learnStep(state, action, reward, nextState, done) {
         const trainItems = [];
         for (const [rotK, flip, actionMap] of BOARD_AUGMENTATIONS) {
@@ -330,7 +340,8 @@ class TSTrainer {
                 target = scaleReward(reward) + this.cfg.gamma * INVALID_ACTION_TARGET;
             } else {
                 const augNext = augmentBoard(nextState, rotK, flip);
-                const qNext = this.model.forward(augNext);
+                // target network로 Q(s') 계산 → 에피소드 내 고정
+                const qNext = this.targetModel.forward(augNext);
                 // augmented nextState에서 valid action만 max
                 const sim = new Game2048();
                 sim.board = augNext.map(r => [...r]);
@@ -388,6 +399,9 @@ class TSTrainer {
         // 게임오버 보드 표시
         if (this.onStep) this.onStep({ stepNum, state, action: -1, reward: 0, loss: null, qValues: this.model.forward(state), done: true, score: env.score, maxTile: env.getMaxTile() });
         await new Promise(r => setTimeout(r, 0));
+
+        // 에피소드 끝: target network를 main network로 동기화
+        this.model.copyWeightsTo(this.targetModel);
 
         return { steps: stepNum, score: env.score, maxTile: env.getMaxTile(), losses };
     }
